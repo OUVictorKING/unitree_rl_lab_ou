@@ -11,6 +11,7 @@
 #include "isaaclab/algorithms/algorithms.h"
 #include <iostream>
 #include "isaaclab/utils/utils.h"
+// #include "MimicMotionPlayer.h"
 
 namespace isaaclab
 {
@@ -52,6 +53,12 @@ public:
         global_phase = 0;
         episode_length = 0;
         robot->update();
+
+        // if (motion_player)
+        // {
+        //     motion_player->reset(0);
+        // }
+
         action_manager->reset();
         observation_manager->reset();
     }
@@ -63,11 +70,19 @@ public:
         auto obs = observation_manager->compute();
         auto action = alg->act(obs);
         action_manager->process_action(action);
+
+        // if (motion_player)
+        // {
+        //     motion_player->step();
+        // }
     }
 
     float step_dt;
     
     YAML::Node cfg;
+
+    // ManagerBasedRLEnv 成员
+    // std::unique_ptr<MimicMotionPlayer> motion_player;
 
     std::unique_ptr<ObservationManager> observation_manager;
     std::unique_ptr<ActionManager> action_manager;

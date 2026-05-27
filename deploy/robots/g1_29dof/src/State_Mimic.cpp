@@ -34,6 +34,7 @@ Eigen::Quaternionf anchor_quat_w(std::shared_ptr<State_Mimic::MotionLoader_> loa
 }
 
 
+// 会根据deploy记录的顺序来进行obs复刻，而不是自己定义顺序和长度的
 namespace isaaclab
 {
 namespace mdp

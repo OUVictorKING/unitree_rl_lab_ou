@@ -18,7 +18,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
-from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_29DOF_CFG as ROBOT_CFG
+from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_23DOF_CFG as ROBOT_CFG
 from unitree_rl_lab.tasks.locomotion import mdp
 
 COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
@@ -44,6 +44,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
     # ground terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
+        # 使用鹅卵石路面
         terrain_type="generator",  # "plane", "generator"
         terrain_generator=COBBLESTONE_ROAD_CFG,  # None, ROUGH_TERRAINS_CFG
         max_init_terrain_level=COBBLESTONE_ROAD_CFG.num_rows - 1,
@@ -73,7 +74,9 @@ class RobotSceneCfg(InteractiveSceneCfg):
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
     )
-    contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
+    contact_forces = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True
+    )
     # lights
     sky_light = AssetBaseCfg(
         prim_path="/World/skyLight",
@@ -156,6 +159,7 @@ class EventCfg:
     )
 
 
+# 控制命令的生成
 @configclass
 class CommandsCfg:
     """Command specifications for the MDP."""
@@ -163,15 +167,21 @@ class CommandsCfg:
     base_velocity = mdp.UniformLevelVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
-        rel_standing_envs=0.02,
+        # rel_standing_envs=0.02,
+        rel_standing_envs=0.1,
         rel_heading_envs=1.0,
         heading_command=False,
         debug_vis=True,
+        # 初始的ranges，可以根据任务CurriculumCfg进行修改，但是实际上limit_ranges也可以修改，只是为了区分而以
         ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
             lin_vel_x=(-0.1, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-0.1, 0.1)
         ),
+        # 极限的控制信号范围
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.2, 0.2)
+            # lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.2, 0.2)
+            lin_vel_x=(-0.8, 0.8),
+            lin_vel_y=(-0.5, 0.5),
+            ang_vel_z=(-0.5, 0.5),
         ),
     )
 
@@ -194,13 +204,23 @@ class ObservationsCfg:
         """Observations for policy group."""
 
         # observation terms (order preserved)
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.2, noise=Unoise(n_min=-0.2, n_max=0.2))
-        projected_gravity = ObsTerm(func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05))
-        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_velocity"})
-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05, noise=Unoise(n_min=-1.5, n_max=1.5))
+        base_ang_vel = ObsTerm(
+            func=mdp.base_ang_vel, scale=0.2, noise=Unoise(n_min=-0.2, n_max=0.2)
+        )
+        projected_gravity = ObsTerm(
+            func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05)
+        )
+        velocity_commands = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "base_velocity"}
+        )
+        joint_pos_rel = ObsTerm(
+            func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01)
+        )
+        joint_vel_rel = ObsTerm(
+            func=mdp.joint_vel_rel, scale=0.05, noise=Unoise(n_min=-1.5, n_max=1.5)
+        )
         last_action = ObsTerm(func=mdp.last_action)
-        # gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
+        gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
 
         def __post_init__(self):
             self.history_length = 5
@@ -217,15 +237,18 @@ class ObservationsCfg:
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.2)
         projected_gravity = ObsTerm(func=mdp.projected_gravity)
-        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_velocity"})
+        velocity_commands = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "base_velocity"}
+        )
         joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05)
         last_action = ObsTerm(func=mdp.last_action)
-        # gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
-        # height_scanner = ObsTerm(func=mdp.height_scan,
-        #     params={"sensor_cfg": SceneEntityCfg("height_scanner")},
-        #     clip=(-1.0, 5.0),
-        # )
+        gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
+        height_scanner = ObsTerm(
+            func=mdp.height_scan,
+            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
+            clip=(-1.0, 5.0),
+        )
 
         def __post_init__(self):
             self.history_length = 5
@@ -241,27 +264,39 @@ class RewardsCfg:
     # -- task
     track_lin_vel_xy = RewTerm(
         func=mdp.track_lin_vel_xy_yaw_frame_exp,
+        # weight=1.0,
         weight=1.0,
         params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
     )
     track_ang_vel_z = RewTerm(
-        func=mdp.track_ang_vel_z_exp, weight=0.5, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
+        func=mdp.track_ang_vel_z_exp,
+        # weight=0.5,
+        weight=1.0,
+        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+        # params={"command_name": "base_velocity", "std": 0.3},
     )
 
     alive = RewTerm(func=mdp.is_alive, weight=0.15)
 
     # -- base
-    base_linear_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
-    base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
+    # base_linear_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
+    base_linear_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.5)
+    # base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
+    base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.06)
+    # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.001)
     joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.001)
+    # joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
     joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.05)
+    # 原来的action rate：
+    # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.05)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.04)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-5.0)
     energy = RewTerm(func=mdp.energy, weight=-2e-5)
 
     joint_deviation_arms = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.1,
+        # weight=-0.1,
+        weight=-0.12,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -275,7 +310,8 @@ class RewardsCfg:
     )
     joint_deviation_waists = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-1,
+        # weight=-1,
+        weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -287,19 +323,28 @@ class RewardsCfg:
     )
     joint_deviation_legs = RewTerm(
         func=mdp.joint_deviation_l1,
+        # weight=-1.0,
         weight=-1.0,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint", ".*_hip_yaw_joint"])},
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_hip_roll_joint", ".*_hip_yaw_joint"]
+            )
+        },
     )
 
     # -- robot
     flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-5.0)
-    base_height = RewTerm(func=mdp.base_height_l2, weight=-10, params={"target_height": 0.78})
+    base_height = RewTerm(
+        func=mdp.base_height_l2, weight=-10, params={"target_height": 0.78}
+    )
 
     # -- feet
     gait = RewTerm(
         func=mdp.feet_gait,
         weight=0.5,
+        # weight=0.1,
         params={
+            # "period": 0.8,
             "period": 0.8,
             "offset": [0.0, 0.5],
             "threshold": 0.55,
@@ -309,6 +354,7 @@ class RewardsCfg:
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
+        # weight=-0.2,
         weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
@@ -317,12 +363,27 @@ class RewardsCfg:
     )
     feet_clearance = RewTerm(
         func=mdp.foot_clearance_reward,
+        # weight=1.0,
         weight=1.0,
         params={
             "std": 0.05,
             "tanh_mult": 2.0,
             "target_height": 0.1,
             "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+        },
+    )
+    # 新增的，为了让机器人在没有控制命令的时候让他不要跺脚
+    stand_still = RewTerm(
+        func=mdp.stand_still,
+        weight=-0.8,
+        params={"command_name": "base_velocity"},
+    )
+    feet_contact_still = RewTerm(
+        func=mdp.feet_contact_without_cmd,
+        weight=0.5,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+            "command_name": "base_velocity",
         },
     )
 
@@ -332,7 +393,9 @@ class RewardsCfg:
         weight=-1,
         params={
             "threshold": 1,
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["(?!.*ankle.*).*"]),
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["(?!.*ankle.*).*"]
+            ),
         },
     )
 
@@ -342,7 +405,9 @@ class TerminationsCfg:
     """Termination terms for the MDP."""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    base_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.2})
+    base_height = DoneTerm(
+        func=mdp.root_height_below_minimum, params={"minimum_height": 0.2}
+    )
     bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 0.8})
 
 
@@ -352,6 +417,7 @@ class CurriculumCfg:
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
     lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
+    ang_vel_cmd_levels = CurrTerm(func=mdp.ang_vel_cmd_levels)
 
 
 @configclass
@@ -359,7 +425,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the locomotion velocity-tracking environment."""
 
     # Scene settings
-    scene: RobotSceneCfg = RobotSceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: RobotSceneCfg = RobotSceneCfg(num_envs=256, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -397,10 +463,84 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
 
 
 @configclass
+class EventCfgDebug:
+    """Debug events for Isaac-MuJoCo first-frame alignment."""
+
+    physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            "static_friction_range": (1.0, 1.0),
+            "dynamic_friction_range": (1.0, 1.0),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 1,
+        },
+    )
+
+    add_base_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
+            "mass_distribution_params": (0.0, 0.0),
+            "operation": "add",
+        },
+    )
+
+    base_external_force_torque = EventTerm(
+        func=mdp.apply_external_force_torque,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
+            "force_range": (0.0, 0.0),
+            "torque_range": (0.0, 0.0),
+        },
+    )
+
+    reset_base = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "yaw": (0.0, 0.0)},
+            "velocity_range": {
+                "x": (0.0, 0.0),
+                "y": (0.0, 0.0),
+                "z": (0.0, 0.0),
+                "roll": (0.0, 0.0),
+                "pitch": (0.0, 0.0),
+                "yaw": (0.0, 0.0),
+            },
+        },
+    )
+
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_scale,
+        mode="reset",
+        params={
+            "position_range": (1.0, 1.0),
+            "velocity_range": (0.0, 0.0),
+        },
+    )
+
+    push_robot = None
+
+
+@configclass
 class RobotPlayEnvCfg(RobotEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.scene.num_envs = 32
+
+        self.events = EventCfgDebug()
+        self.observations.policy.enable_corruption = False
+        self.scene.robot.init_state.pos = (0.0, 0.0, 0.8)
+
+        self.scene.num_envs = 1
         self.scene.terrain.terrain_generator.num_rows = 2
-        self.scene.terrain.terrain_generator.num_cols = 10
-        self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges
+        self.scene.terrain.terrain_generator.num_cols = 5
+        # self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges
+        self.commands.base_velocity.ranges.lin_vel_x = (0.5, 0.5)
+        self.commands.base_velocity.ranges.lin_vel_y = (0.0, 0.0)
+        self.commands.base_velocity.ranges.ang_vel_z = (0.0, 0.0)
+
+        self.curriculum = None

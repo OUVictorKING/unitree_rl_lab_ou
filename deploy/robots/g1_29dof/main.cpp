@@ -39,6 +39,7 @@ int main(int argc, char** argv)
     init_fsm_state();
 
     FSMState::lowcmd->msg_.mode_machine() = 5; // 29dof
+    // FSMState::lowcmd->msg_.mode_machine() = 4; // 29dof
     if(!FSMState::lowcmd->check_mode_machine(FSMState::lowstate)) {
         spdlog::critical("Unmatched robot type.");
         exit(-1);

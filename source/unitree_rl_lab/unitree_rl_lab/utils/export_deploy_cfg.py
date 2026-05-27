@@ -7,6 +7,9 @@ from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.utils import class_to_dict
 from isaaclab.utils.string import resolve_matching_names
 
+# 导出deploy.yaml文件的工具，但是只能在manager-based下使用（就是配置各种cfg），
+# 在direct env下就无法使用了
+
 
 def format_value(x):
     if isinstance(x, float):
@@ -22,22 +25,32 @@ def format_value(x):
 def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
     asset: Articulation = env.scene["robot"]
     joint_sdk_names = env.cfg.scene.robot.joint_sdk_names
-    joint_ids_map, _ = resolve_matching_names(asset.data.joint_names, joint_sdk_names, preserve_order=True)
+    joint_ids_map, _ = resolve_matching_names(
+        asset.data.joint_names, joint_sdk_names, preserve_order=True
+    )
 
     cfg = {}  # noqa: SIM904
     cfg["joint_ids_map"] = joint_ids_map
     cfg["step_dt"] = env.cfg.sim.dt * env.cfg.decimation
     stiffness = np.zeros(len(joint_sdk_names))
-    stiffness[joint_ids_map] = asset.data.default_joint_stiffness[0].detach().cpu().numpy().tolist()
+    stiffness[joint_ids_map] = (
+        asset.data.default_joint_stiffness[0].detach().cpu().numpy().tolist()
+    )
     cfg["stiffness"] = stiffness.tolist()
     damping = np.zeros(len(joint_sdk_names))
-    damping[joint_ids_map] = asset.data.default_joint_damping[0].detach().cpu().numpy().tolist()
+    damping[joint_ids_map] = (
+        asset.data.default_joint_damping[0].detach().cpu().numpy().tolist()
+    )
     cfg["damping"] = damping.tolist()
-    cfg["default_joint_pos"] = asset.data.default_joint_pos[0].detach().cpu().numpy().tolist()
+    cfg["default_joint_pos"] = (
+        asset.data.default_joint_pos[0].detach().cpu().numpy().tolist()
+    )
 
     # --- commands ---
     cfg["commands"] = {}
-    if hasattr(env.cfg.commands, "base_velocity"):  # some environments do not have base_velocity command
+    if hasattr(
+        env.cfg.commands, "base_velocity"
+    ):  # some environments do not have base_velocity command
         cfg["commands"]["base_velocity"] = {}
         if hasattr(env.cfg.commands.base_velocity, "limit_ranges"):
             ranges = env.cfg.commands.base_velocity.limit_ranges.to_dict()
@@ -70,7 +83,13 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         # clean cfg
         term_cfg = term_cfg.to_dict()
 
-        for _ in ["class_type", "asset_name", "debug_vis", "preserve_order", "use_default_offset"]:
+        for _ in [
+            "class_type",
+            "asset_name",
+            "debug_vis",
+            "preserve_order",
+            "use_default_offset",
+        ]:
             del term_cfg[_]
         cfg["actions"][action_name] = term_cfg
 

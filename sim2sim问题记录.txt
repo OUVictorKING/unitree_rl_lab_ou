@@ -1,0 +1,419 @@
+woan@woa:~/HumanoidProject/unitree_rl_lab/robojudo$ conda activate unitree-mujoco
+python /home/woan/HumanoidProject/unitree_mujoco/simulate_python/unitree_mujoco.py
+pygame 2.6.1 (SDL 2.28.4, Python 3.10.20)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[SIM] camera tracking body: pelvis (id=1)
+1778725511.187281 [0]     python: selected interface "lo" is not multicast-capable: disabling multicast
+SDK -> MuJoCo actuator remap: {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 22: 22, 23: 23, 24: 24, 25: 25, 26: 26}
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+ 
+<<------------- Link ------------->> 
+link_index: 0 , name: world
+link_index: 1 , name: pelvis
+link_index: 2 , name: left_hip_pitch_link
+link_index: 3 , name: left_hip_roll_link
+link_index: 4 , name: left_hip_yaw_link
+link_index: 5 , name: left_knee_link
+link_index: 6 , name: left_ankle_pitch_link
+link_index: 7 , name: left_ankle_roll_link
+link_index: 8 , name: right_hip_pitch_link
+link_index: 9 , name: right_hip_roll_link
+link_index: 10 , name: right_hip_yaw_link
+link_index: 11 , name: right_knee_link
+link_index: 12 , name: right_ankle_pitch_link
+link_index: 13 , name: right_ankle_roll_link
+link_index: 14 , name: torso_link
+link_index: 15 , name: left_shoulder_pitch_link
+link_index: 16 , name: left_shoulder_roll_link
+link_index: 17 , name: left_shoulder_yaw_link
+link_index: 18 , name: left_elbow_link
+link_index: 19 , name: left_wrist_roll_rubber_hand
+link_index: 20 , name: right_shoulder_pitch_link
+link_index: 21 , name: right_shoulder_roll_link
+link_index: 22 , name: right_shoulder_yaw_link
+link_index: 23 , name: right_elbow_link
+link_index: 24 , name: right_wrist_roll_rubber_hand
+link_index: 25 , name: waist_roll
+link_index: 26 , name: waist_pitch
+link_index: 27 , name: left_wrist_pitch
+link_index: 28 , name: left_wrist_yaw
+link_index: 29 , name: right_wrist_pitch
+link_index: 30 , name: right_wrist_yaw
+ 
+<<------------- Joint ------------->> 
+joint_index: 0 , name: floating_base_joint
+joint_index: 1 , name: left_hip_pitch_joint
+joint_index: 2 , name: left_hip_roll_joint
+joint_index: 3 , name: left_hip_yaw_joint
+joint_index: 4 , name: left_knee_joint
+joint_index: 5 , name: left_ankle_pitch_joint
+joint_index: 6 , name: left_ankle_roll_joint
+joint_index: 7 , name: right_hip_pitch_joint
+joint_index: 8 , name: right_hip_roll_joint
+joint_index: 9 , name: right_hip_yaw_joint
+joint_index: 10 , name: right_knee_joint
+joint_index: 11 , name: right_ankle_pitch_joint
+joint_index: 12 , name: right_ankle_roll_joint
+joint_index: 13 , name: waist_yaw_joint
+joint_index: 14 , name: left_shoulder_pitch_joint
+joint_index: 15 , name: left_shoulder_roll_joint
+joint_index: 16 , name: left_shoulder_yaw_joint
+joint_index: 17 , name: left_elbow_joint
+joint_index: 18 , name: left_wrist_roll_joint
+joint_index: 19 , name: right_shoulder_pitch_joint
+joint_index: 20 , name: right_shoulder_roll_joint
+joint_index: 21 , name: right_shoulder_yaw_joint
+joint_index: 22 , name: right_elbow_joint
+joint_index: 23 , name: right_wrist_roll_joint
+joint_index: 24 , name: waist_roll_joint
+joint_index: 25 , name: waist_pitch_joint
+joint_index: 26 , name: left_wrist_pitch_joint
+joint_index: 27 , name: left_wrist_yaw_joint
+joint_index: 28 , name: right_wrist_pitch_joint
+joint_index: 29 , name: right_wrist_yaw_joint
+ 
+<<------------- Actuator ------------->>
+actuator_index: 0 , name: left_hip_pitch
+actuator_index: 1 , name: left_hip_roll
+actuator_index: 2 , name: left_hip_yaw
+actuator_index: 3 , name: left_knee
+actuator_index: 4 , name: left_ankle_pitch
+actuator_index: 5 , name: left_ankle_roll
+actuator_index: 6 , name: right_hip_pitch
+actuator_index: 7 , name: right_hip_roll
+actuator_index: 8 , name: right_hip_yaw
+actuator_index: 9 , name: right_knee
+actuator_index: 10 , name: right_ankle_pitch
+actuator_index: 11 , name: right_ankle_roll
+actuator_index: 12 , name: waist_yaw
+actuator_index: 13 , name: waist_roll
+actuator_index: 14 , name: waist_pitch
+actuator_index: 15 , name: left_shoulder_pitch
+actuator_index: 16 , name: left_shoulder_roll
+actuator_index: 17 , name: left_shoulder_yaw
+actuator_index: 18 , name: left_elbow
+actuator_index: 19 , name: left_wrist_roll
+actuator_index: 20 , name: left_wrist_pitch
+actuator_index: 21 , name: left_wrist_yaw
+actuator_index: 22 , name: right_shoulder_pitch
+actuator_index: 23 , name: right_shoulder_roll
+actuator_index: 24 , name: right_shoulder_yaw
+actuator_index: 25 , name: right_elbow
+actuator_index: 26 , name: right_wrist_roll
+actuator_index: 27 , name: right_wrist_pitch
+actuator_index: 28 , name: right_wrist_yaw
+ 
+<<------------- Sensor ------------->>
+sensor_index: 0 , name: left_hip_pitch_pos , dim: 1
+sensor_index: 1 , name: left_hip_roll_pos , dim: 1
+sensor_index: 2 , name: left_hip_yaw_pos , dim: 1
+sensor_index: 3 , name: left_knee_pos , dim: 1
+sensor_index: 4 , name: left_ankle_pitch_pos , dim: 1
+sensor_index: 5 , name: left_ankle_roll_pos , dim: 1
+sensor_index: 6 , name: right_hip_pitch_pos , dim: 1
+sensor_index: 7 , name: right_hip_roll_pos , dim: 1
+sensor_index: 8 , name: right_hip_yaw_pos , dim: 1
+sensor_index: 9 , name: right_knee_pos , dim: 1
+sensor_index: 10 , name: right_ankle_pitch_pos , dim: 1
+sensor_index: 11 , name: right_ankle_roll_pos , dim: 1
+sensor_index: 12 , name: waist_yaw_pos , dim: 1
+sensor_index: 13 , name: waist_roll_pos , dim: 1
+sensor_index: 14 , name: waist_pitch_pos , dim: 1
+sensor_index: 15 , name: left_shoulder_pitch_pos , dim: 1
+sensor_index: 16 , name: left_shoulder_roll_pos , dim: 1
+sensor_index: 17 , name: left_shoulder_yaw_pos , dim: 1
+sensor_index: 18 , name: left_elbow_pos , dim: 1
+sensor_index: 19 , name: left_wrist_roll_pos , dim: 1
+sensor_index: 20 , name: left_wrist_pitch_pos , dim: 1
+sensor_index: 21 , name: left_wrist_yaw_pos , dim: 1
+sensor_index: 22 , name: right_shoulder_pitch_pos , dim: 1
+sensor_index: 23 , name: right_shoulder_roll_pos , dim: 1
+sensor_index: 24 , name: right_shoulder_yaw_pos , dim: 1
+sensor_index: 25 , name: right_elbow_pos , dim: 1
+sensor_index: 26 , name: right_wrist_roll_pos , dim: 1
+sensor_index: 27 , name: right_wrist_pitch_pos , dim: 1
+sensor_index: 28 , name: right_wrist_yaw_pos , dim: 1
+sensor_index: 29 , name: left_hip_pitch_vel , dim: 1
+sensor_index: 30 , name: left_hip_roll_vel , dim: 1
+sensor_index: 31 , name: left_hip_yaw_vel , dim: 1
+sensor_index: 32 , name: left_knee_vel , dim: 1
+sensor_index: 33 , name: left_ankle_pitch_vel , dim: 1
+sensor_index: 34 , name: left_ankle_roll_vel , dim: 1
+sensor_index: 35 , name: right_hip_pitch_vel , dim: 1
+sensor_index: 36 , name: right_hip_roll_vel , dim: 1
+sensor_index: 37 , name: right_hip_yaw_vel , dim: 1
+sensor_index: 38 , name: right_knee_vel , dim: 1
+sensor_index: 39 , name: right_ankle_pitch_vel , dim: 1
+sensor_index: 40 , name: right_ankle_roll_vel , dim: 1
+sensor_index: 41 , name: waist_yaw_vel , dim: 1
+sensor_index: 42 , name: waist_roll_vel , dim: 1
+sensor_index: 43 , name: waist_pitch_vel , dim: 1
+sensor_index: 44 , name: left_shoulder_pitch_vel , dim: 1
+sensor_index: 45 , name: left_shoulder_roll_vel , dim: 1
+sensor_index: 46 , name: left_shoulder_yaw_vel , dim: 1
+sensor_index: 47 , name: left_elbow_vel , dim: 1
+sensor_index: 48 , name: left_wrist_roll_vel , dim: 1
+sensor_index: 49 , name: left_wrist_pitch_vel , dim: 1
+sensor_index: 50 , name: left_wrist_yaw_vel , dim: 1
+sensor_index: 51 , name: right_shoulder_pitch_vel , dim: 1
+sensor_index: 52 , name: right_shoulder_roll_vel , dim: 1
+sensor_index: 53 , name: right_shoulder_yaw_vel , dim: 1
+sensor_index: 54 , name: right_elbow_vel , dim: 1
+sensor_index: 55 , name: right_wrist_roll_vel , dim: 1
+sensor_index: 56 , name: right_wrist_pitch_vel , dim: 1
+sensor_index: 57 , name: right_wrist_yaw_vel , dim: 1
+sensor_index: 58 , name: left_hip_pitch_torque , dim: 1
+sensor_index: 59 , name: left_hip_roll_torque , dim: 1
+sensor_index: 60 , name: left_hip_yaw_torque , dim: 1
+sensor_index: 61 , name: left_knee_torque , dim: 1
+sensor_index: 62 , name: left_ankle_pitch_torque , dim: 1
+sensor_index: 63 , name: left_ankle_roll_torque , dim: 1
+sensor_index: 64 , name: right_hip_pitch_torque , dim: 1
+sensor_index: 65 , name: right_hip_roll_torque , dim: 1
+sensor_index: 66 , name: right_hip_yaw_torque , dim: 1
+sensor_index: 67 , name: right_knee_torque , dim: 1
+sensor_index: 68 , name: right_ankle_pitch_torque , dim: 1
+sensor_index: 69 , name: right_ankle_roll_torque , dim: 1
+sensor_index: 70 , name: waist_yaw_torque , dim: 1
+sensor_index: 71 , name: waist_roll_torque , dim: 1
+sensor_index: 72 , name: waist_pitch_torque , dim: 1
+sensor_index: 73 , name: left_shoulder_pitch_torque , dim: 1
+sensor_index: 74 , name: left_shoulder_roll_torque , dim: 1
+sensor_index: 75 , name: left_shoulder_yaw_torque , dim: 1
+sensor_index: 76 , name: left_elbow_torque , dim: 1
+sensor_index: 77 , name: left_wrist_roll_torque , dim: 1
+sensor_index: 78 , name: left_wrist_pitch_torque , dim: 1
+sensor_index: 79 , name: left_wrist_yaw_torque , dim: 1
+sensor_index: 80 , name: right_shoulder_pitch_torque , dim: 1
+sensor_index: 81 , name: right_shoulder_roll_torque , dim: 1
+sensor_index: 82 , name: right_shoulder_yaw_torque , dim: 1
+sensor_index: 83 , name: right_elbow_torque , dim: 1
+sensor_index: 84 , name: right_wrist_roll_torque , dim: 1
+sensor_index: 85 , name: right_wrist_pitch_torque , dim: 1
+sensor_index: 86 , name: right_wrist_yaw_torque , dim: 1
+sensor_index: 87 , name: imu_quat , dim: 4
+sensor_index: 91 , name: imu_gyro , dim: 3
+sensor_index: 94 , name: imu_acc , dim: 3
+sensor_index: 97 , name: frame_pos , dim: 3
+sensor_index: 100 , name: frame_vel , dim: 3
+sensor_index: 103 , name: secondary_imu_quat , dim: 4
+sensor_index: 107 , name: secondary_imu_gyro , dim: 3
+sensor_index: 110 , name: secondary_imu_acc , dim: 3
+ 
+[LOWCMD] ctrl_norm=0.00
+  sdk00->mj00 q_des=+0.000 q=-1.912 dq=+0.001 ctrl=+0.000
+  sdk01->mj01 q_des=+0.000 q=-0.051 dq=-0.000 ctrl=+0.000
+  sdk02->mj02 q_des=+0.000 q=+1.277 dq=-0.001 ctrl=+0.000
+  sdk03->mj03 q_des=+0.000 q=-0.088 dq=+0.000 ctrl=+0.000
+  sdk04->mj04 q_des=+0.000 q=-0.253 dq=-0.003 ctrl=+0.000
+  sdk05->mj05 q_des=+0.000 q=+0.256 dq=-0.001 ctrl=+0.000
+[LOWCMD] ctrl_norm=0.00
+  sdk00->mj00 q_des=+0.000 q=-1.912 dq=+0.001 ctrl=+0.000
+  sdk01->mj01 q_des=+0.000 q=-0.051 dq=-0.000 ctrl=+0.000
+  sdk02->mj02 q_des=+0.000 q=+1.277 dq=-0.002 ctrl=+0.000
+  sdk03->mj03 q_des=+0.000 q=-0.088 dq=-0.000 ctrl=+0.000
+  sdk04->mj04 q_des=+0.000 q=-0.255 dq=-0.003 ctrl=+0.000
+  sdk05->mj05 q_des=+0.000 q=+0.256 dq=-0.001 ctrl=+0.000
+[LOWCMD] ctrl_norm=55.72
+  sdk05->mj05 q_des=+0.215 q=+0.188 dq=+16.945 ctrl=-32.814
+  sdk06->mj06 q_des=-1.971 q=-2.253 dq=+0.281 ctrl=+27.640
+  sdk03->mj03 q_des=-0.026 q=-0.073 dq=-4.015 ctrl=+23.112
+  sdk00->mj00 q_des=-1.620 q=-1.837 dq=+0.637 ctrl=+20.419
+  sdk04->mj04 q_des=-0.246 q=-0.228 dq=+6.206 ctrl=-13.136
+  sdk12->mj12 q_des=-0.067 q=-0.031 dq=+0.004 ctrl=-7.274
+[SIM] reset requested by keyboard.
+[SIM] reset done, default_joint_pos applied, auto sequence armed: FixStand -> Velocity
+[SIM] keyboard trigger: FixStand
+[SIM] auto sequence stage1 done, wait for Velocity
+[SIM] keyboard trigger: Velocity
+[SIM] auto sequence finished.
+[LOWSTATE REMOTE] remote2=0 remote3=20 fix=True vel=True back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=5120 fix=True vel=True back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWCMD] ctrl_norm=184.30
+  sdk05->mj05 q_des=+0.172 q=+0.035 dq=-44.240 ctrl=+93.962
+  sdk11->mj11 q_des=+0.115 q=+0.133 dq=-44.454 ctrl=+88.172
+  sdk04->mj04 q_des=-0.237 q=+0.110 dq=+29.911 ctrl=-73.691
+  sdk10->mj10 q_des=-0.651 q=-0.572 dq=-34.314 ctrl=+65.463
+  sdk03->mj03 q_des=+0.039 q=-0.004 dq=-10.407 ctrl=+48.116
+  sdk02->mj02 q_des=+0.857 q=+0.953 dq=+17.960 ctrl=-45.512
+[LOWCMD] ctrl_norm=88.12
+  sdk02->mj02 q_des=+0.643 q=+0.827 dq=+20.853 ctrl=-60.123
+  sdk05->mj05 q_des=+0.129 q=+0.039 dq=-19.192 ctrl=+41.967
+  sdk11->mj11 q_des=+0.086 q=+0.156 dq=+18.496 ctrl=-39.792
+  sdk00->mj00 q_des=-1.012 q=-1.276 dq=+4.222 ctrl=+18.004
+  sdk04->mj04 q_des=-0.228 q=-0.117 dq=-7.907 ctrl=+11.397
+  sdk01->mj01 q_des=-0.026 q=+0.001 dq=+3.408 ctrl=-9.519
+[SIM] reset requested by keyboard.
+[SIM] reset done, default_joint_pos applied, auto sequence armed: FixStand -> Velocity
+[SIM] keyboard trigger: FixStand
+[SIM] auto sequence stage1 done, wait for Velocity
+[SIM] keyboard trigger: Velocity
+[SIM] auto sequence finished.
+[LOWSTATE REMOTE] remote2=0 remote3=20 fix=True vel=True back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=5120 fix=True vel=True back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWCMD] ctrl_norm=45.58
+  sdk05->mj05 q_des=+0.086 q=-0.145 dq=-7.534 ctrl=+24.313
+  sdk04->mj04 q_des=-0.218 q=-0.146 dq=+8.386 ctrl=-19.656
+  sdk02->mj02 q_des=+0.429 q=+0.518 dq=+4.433 ctrl=-17.846
+  sdk07->mj07 q_des=+0.019 q=+0.156 dq=+1.136 ctrl=-15.969
+  sdk10->mj10 q_des=-0.425 q=-0.365 dq=-7.886 ctrl=+13.366
+  sdk03->mj03 q_des=+0.170 q=+0.069 dq=+0.484 ctrl=+13.154
+[LOWCMD] ctrl_norm=149.47
+  sdk04->mj04 q_des=-0.209 q=-0.320 dq=-35.011 ctrl=+74.439
+  sdk11->mj11 q_des=+0.029 q=-0.107 dq=-33.392 ctrl=+72.220
+  sdk10->mj10 q_des=-0.313 q=-0.249 dq=+31.185 ctrl=-64.922
+  sdk05->mj05 q_des=+0.043 q=-0.093 dq=-25.875 ctrl=+57.180
+  sdk03->mj03 q_des=+0.235 q=+0.239 dq=+11.009 ctrl=-44.615
+  sdk08->mj08 q_des=-0.026 q=+0.033 dq=-15.968 ctrl=+26.066
+[SIM] reset requested by keyboard.
+[SIM] reset done, default_joint_pos applied, auto sequence armed: FixStand -> Velocity
+[SIM] keyboard trigger: FixStand
+[SIM] auto sequence stage1 done, wait for Velocity
+[SIM] keyboard trigger: Velocity
+[SIM] auto sequence finished.
+[LOWSTATE REMOTE] remote2=0 remote3=20 fix=True vel=True back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=5120 fix=True vel=True back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWCMD] ctrl_norm=289.93
+  sdk08->mj08 q_des=+0.000 q=+0.386 dq=+56.737 ctrl=-152.054
+  sdk12->mj12 q_des=+0.000 q=+0.037 dq=+27.779 ctrl=-146.214
+  sdk02->mj02 q_des=+0.000 q=+0.070 dq=+50.461 ctrl=-107.881
+  sdk01->mj01 q_des=+0.000 q=+0.318 dq=+22.508 ctrl=-76.859
+  sdk03->mj03 q_des=+0.300 q=+0.235 dq=-16.093 ctrl=+74.074
+  sdk06->mj06 q_des=-0.100 q=-0.279 dq=-26.432 ctrl=+70.746
+[LOWCMD] ctrl_norm=316.92
+  sdk03->mj03 q_des=+0.048 q=+0.295 dq=+52.816 ctrl=-248.302
+  sdk01->mj01 q_des=-0.445 q=+0.221 dq=+18.287 ctrl=-103.246
+  sdk09->mj09 q_des=+1.484 q=+1.381 dq=-19.630 ctrl=+94.009
+  sdk02->mj02 q_des=+0.646 q=+0.141 dq=+68.790 ctrl=-87.118
+  sdk12->mj12 q_des=+0.061 q=-0.448 dq=+6.462 ctrl=+69.557
+  sdk04->mj04 q_des=-1.924 q=-0.928 dq=-0.274 ctrl=-39.305
+[SIM] reset requested by keyboard.
+[SIM] reset done, default_joint_pos applied, auto sequence armed: FixStand -> Velocity
+[SIM] keyboard trigger: FixStand
+[SIM] auto sequence stage1 done, wait for Velocity
+[SIM] keyboard trigger: Velocity
+[SIM] auto sequence finished.
+[LOWSTATE REMOTE] remote2=0 remote3=16 fix=True vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=4096 fix=True vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=4 fix=False vel=True back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=1024 fix=False vel=True back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWCMD] ctrl_norm=458.36
+  sdk09->mj09 q_des=+0.550 q=+0.325 dq=-39.572 ctrl=+192.118
+  sdk10->mj10 q_des=-0.429 q=+0.377 dq=+74.482 ctrl=-181.205
+  sdk02->mj02 q_des=+0.091 q=-0.171 dq=-70.426 ctrl=+167.081
+  sdk12->mj12 q_des=+0.079 q=+0.057 dq=-31.876 ctrl=+163.933
+  sdk04->mj04 q_des=+0.693 q=-0.718 dq=-52.750 ctrl=+161.929
+  sdk03->mj03 q_des=+0.477 q=+0.411 dq=+35.872 ctrl=-133.515
+[LOWCMD] ctrl_norm=332.50
+  sdk07->mj07 q_des=+0.404 q=-1.441 dq=-11.186 ctrl=+206.852
+  sdk10->mj10 q_des=+0.010 q=-0.486 dq=-51.647 ctrl=+123.133
+  sdk01->mj01 q_des=-0.189 q=+0.620 dq=+16.113 ctrl=-113.125
+  sdk12->mj12 q_des=-0.026 q=+0.062 dq=+17.908 ctrl=-107.178
+  sdk11->mj11 q_des=+0.463 q=+0.184 dq=+58.008 ctrl=-104.855
+  sdk05->mj05 q_des=-0.572 q=-0.445 dq=-51.890 ctrl=+98.716
+[SIM] reset requested by keyboard.
+[SIM] reset done, default_joint_pos applied, auto sequence armed: FixStand -> Velocity
+[SIM] keyboard trigger: FixStand
+[SIM] auto sequence stage1 done, wait for Velocity
+[WIRELESS CTRL] keys=4096 fix=True vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=16 fix=True vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[SIM] keyboard trigger: Velocity
+[SIM] auto sequence finished.
+[LOWSTATE REMOTE] remote2=0 remote3=4 fix=False vel=True back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=1024 fix=False vel=True back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWCMD] ctrl_norm=802.54
+  sdk04->mj04 q_des=-14.613 q=-0.959 dq=+0.180 ctrl=-546.552
+  sdk07->mj07 q_des=+3.250 q=-1.210 dq=-3.382 ctrl=+452.788
+  sdk10->mj10 q_des=-7.744 q=-0.953 dq=+0.006 ctrl=-271.648
+  sdk06->mj06 q_des=-4.467 q=-2.645 dq=+2.958 ctrl=-188.143
+  sdk01->mj01 q_des=-1.349 q=-0.123 dq=-1.385 ctrl=-119.847
+  sdk05->mj05 q_des=-2.560 q=-0.359 dq=+0.042 ctrl=-88.114
+[LOWCMD] ctrl_norm=1233.06
+  sdk04->mj04 q_des=-19.961 q=-0.947 dq=-0.094 ctrl=-760.376
+  sdk07->mj07 q_des=+6.837 q=-0.555 dq=+0.139 ctrl=+738.908
+  sdk06->mj06 q_des=-6.548 q=-2.538 dq=+0.040 ctrl=-401.054
+  sdk10->mj10 q_des=-7.951 q=-0.925 dq=+0.097 ctrl=-281.265
+  sdk01->mj01 q_des=-2.247 q=-0.308 dq=+0.064 ctrl=-194.009
+  sdk00->mj00 q_des=-3.766 q=-1.975 dq=+0.002 ctrl=-179.120
+[SIM] reset requested by keyboard.
+[SIM] reset done, default_joint_pos applied, auto sequence armed: FixStand -> Velocity
+[SIM] keyboard trigger: FixStand
+[SIM] auto sequence stage1 done, wait for Velocity
+[SIM] keyboard trigger: Velocity
+[SIM] auto sequence finished.
+[LOWSTATE REMOTE] remote2=0 remote3=16 fix=True vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=4096 fix=True vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=4 fix=False vel=True back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=1024 fix=False vel=True back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWCMD] ctrl_norm=595.09
+  sdk07->mj07 q_des=+3.472 q=-0.400 dq=-1.921 ctrl=+391.090
+  sdk04->mj04 q_des=-10.359 q=-0.951 dq=+0.069 ctrl=-376.454
+  sdk10->mj10 q_des=-4.729 q=-0.949 dq=+0.276 ctrl=-151.733
+  sdk08->mj08 q_des=-1.795 q=-2.764 dq=+0.524 ctrl=+95.785
+  sdk09->mj09 q_des=+2.906 q=+2.174 dq=+46.661 ctrl=-76.859
+  sdk23->mj23 q_des=-0.372 q=-1.847 dq=-9.956 ctrl=+68.955
+[LOWCMD] ctrl_norm=314.64
+  sdk08->mj08 q_des=-0.419 q=-2.775 dq=+2.550 ctrl=+230.491
+  sdk11->mj11 q_des=+3.027 q=+0.352 dq=+0.718 ctrl=+105.547
+  sdk01->mj01 q_des=+1.912 q=+0.876 dq=-0.597 ctrl=+104.772
+  sdk06->mj06 q_des=-1.489 q=-2.380 dq=-0.763 ctrl=+90.624
+  sdk05->mj05 q_des=+1.729 q=+0.337 dq=+0.485 ctrl=+54.707
+  sdk09->mj09 q_des=+1.632 q=+2.038 dq=-2.028 ctrl=-52.863
+[LOWCMD] ctrl_norm=562.40
+  sdk07->mj07 q_des=+2.325 q=-1.011 dq=-0.545 ctrl=+334.732
+  sdk01->mj01 q_des=+0.073 q=+3.018 dq=-0.919 ctrl=-292.649
+  sdk04->mj04 q_des=-5.830 q=-0.943 dq=-0.285 ctrl=-194.924
+  sdk09->mj09 q_des=+2.994 q=+1.764 dq=+0.647 ctrl=+181.800
+  sdk10->mj10 q_des=-4.470 q=-0.997 dq=+0.113 ctrl=-139.153
+  sdk08->mj08 q_des=-1.279 q=-2.324 dq=+0.175 ctrl=+104.193
+[SIM] reset requested by keyboard.
+[SIM] reset done, default_joint_pos applied, auto sequence armed: FixStand -> Velocity
+[SIM] keyboard trigger: FixStand
+[SIM] auto sequence stage1 done, wait for Velocity
+[SIM] keyboard trigger: Velocity
+[SIM] auto sequence finished.
+[LOWSTATE REMOTE] remote2=0 remote3=20 fix=True vel=True back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=5120 fix=True vel=True back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWSTATE REMOTE] remote2=0 remote3=0 fix=False vel=False back=False mimic1=False mimic2=False vx=+0.000 vy=+0.000 wz=+0.000
+[WIRELESS CTRL] keys=0 fix=False vel=False back=False mimic1=False mimic2=False lx=+0.000 ly=+0.000 rx=+0.000 ry=+0.000
+[LOWCMD] ctrl_norm=559.21
+  sdk07->mj07 q_des=+3.302 q=-0.433 dq=+0.027 ctrl=+373.420
+  sdk04->mj04 q_des=-8.788 q=-0.950 dq=-0.064 ctrl=-313.369
+  sdk03->mj03 q_des=-0.438 q=+1.170 dq=-13.277 ctrl=-188.065
+  sdk10->mj10 q_des=-3.756 q=-0.951 dq=-0.048 ctrl=-112.092
+  sdk01->mj01 q_des=-0.962 q=+0.134 dq=-2.260 ctrl=-105.005
+  sdk06->mj06 q_des=-2.880 q=-2.272 dq=+6.164 ctrl=-73.105
+[LOWCMD] ctrl_norm=233.08
+  sdk05->mj05 q_des=-0.407 q=-0.196 dq=-74.017 ctrl=+139.614
+  sdk11->mj11 q_des=+0.373 q=-0.098 dq=-39.056 ctrl=+96.953
+  sdk06->mj06 q_des=-0.775 q=-1.713 dq=+6.619 ctrl=+80.501
+  sdk07->mj07 q_des=+0.886 q=+0.225 dq=+1.673 ctrl=+62.748
+  sdk02->mj02 q_des=+0.547 q=+0.437 dq=+36.601 ctrl=-62.231
+  sdk01->mj01 q_des=-0.449 q=+0.034 dq=+5.251 ctrl=-58.871
+[LOWCMD] ctrl_norm=469.60
+  sdk09->mj09 q_des=+1.105 q=-0.276 dq=-46.076 ctrl=+391.487
+  sdk04->mj04 q_des=-0.996 q=-0.832 dq=-69.359 ctrl=+132.156
+  sdk08->mj08 q_des=-0.115 q=-0.181 dq=-47.778 ctrl=+102.122
+  sdk03->mj03 q_des=+0.445 q=+0.230 dq=+32.049 ctrl=-96.048
+  sdk12->mj12 q_des=+0.003 q=+0.122 dq=-22.650 ctrl=+89.438
+  sdk06->mj06 q_des=-0.154 q=-1.008 dq=-0.658 ctrl=+86.742
+[LOWCMD] ctrl_norm=344.21
+  sdk03->mj03 q_des=+1.422 q=+1.135 dq=+61.648 ctrl=-203.594
+  sdk11->mj11 q_des=+5.410 q=+0.340 dq=+0.783 ctrl=+201.235
+  sdk09->mj09 q_des=+0.537 q=+1.416 dq=-67.546 ctrl=+138.326
+  sdk04->mj04 q_des=-2.687 q=-0.973 dq=+1.592 ctrl=-71.747
+  sdk05->mj05 q_des=+1.971 q=+0.355 dq=-0.270 ctrl=+65.166
+  sdk15->mj15 q_des=+0.693 q=+0.927 dq=+36.224 ctrl=-45.578

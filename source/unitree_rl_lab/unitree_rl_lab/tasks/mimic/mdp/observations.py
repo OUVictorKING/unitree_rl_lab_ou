@@ -20,13 +20,15 @@ def robot_anchor_ori_w(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
 def robot_anchor_lin_vel_w(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
     command: MotionCommand = env.command_manager.get_term(command_name)
 
-    return command.robot_anchor_vel_w[:, :3].view(env.num_envs, -1)
+    # return command.robot_anchor_vel_w[:, :3].view(env.num_envs, -1)
+    return command.robot_anchor_lin_vel_w.view(env.num_envs, -1)
 
 
 def robot_anchor_ang_vel_w(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
     command: MotionCommand = env.command_manager.get_term(command_name)
 
-    return command.robot_anchor_vel_w[:, 3:6].view(env.num_envs, -1)
+    # return command.robot_anchor_vel_w[:, 3:6].view(env.num_envs, -1)
+    return command.robot_anchor_ang_vel_w.view(env.num_envs, -1)
 
 
 def robot_body_pos_b(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
@@ -72,6 +74,9 @@ def motion_anchor_pos_b(env: ManagerBasedEnv, command_name: str) -> torch.Tensor
 
 def motion_anchor_ori_b(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
     command: MotionCommand = env.command_manager.get_term(command_name)
+    """
+        计算当前位置和目标位置的旋转矩阵（并且拍扁输入到网络中）
+    """
 
     _, ori = subtract_frame_transforms(
         command.robot_anchor_pos_w,

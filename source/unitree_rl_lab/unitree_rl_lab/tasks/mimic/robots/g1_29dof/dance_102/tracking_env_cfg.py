@@ -44,6 +44,8 @@ class RobotSceneCfg(InteractiveSceneCfg):
     """Configuration for the terrain scene with a legged robot."""
 
     # ground terrain
+    # 直接在简单的地面上进行学习，而不是把资源浪费在地形适应上，但是 velocity 因为任务较为简单，因此需要进行复杂地形学习
+    # mimic 任务的核心难点不在地形，而在“全身协调 + 动力学可实现的动作跟踪”
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="plane",
@@ -71,7 +73,11 @@ class RobotSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.13, 0.13, 0.13), intensity=1000.0),
     )
     contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True, force_threshold=10.0, debug_vis=True
+        prim_path="{ENV_REGEX_NS}/Robot/.*",
+        history_length=3,
+        track_air_time=True,
+        force_threshold=10.0,
+        debug_vis=True,
     )
 
 
@@ -80,6 +86,8 @@ class RobotSceneCfg(InteractiveSceneCfg):
 ##
 
 
+# 关键，控制命令的输出，以 torso_link 为参考坐标中心，防止只学习绝对位置，因为要学习的是相对的姿态，因此要以anchor_body为坐标中心
+# 然后只模仿关键的部位（最能够影响视觉效果的几个link），主要是给后面的manager使用，如line 299
 @configclass
 class CommandsCfg:
     """Command specifications for the MDP."""
@@ -126,7 +134,10 @@ class ActionsCfg:
     """Action specifications for the MDP."""
 
     JointPositionAction = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[".*"], scale=UNITREE_G1_29DOF_MIMIC_ACTION_SCALE, use_default_offset=True
+        asset_name="robot",
+        joint_names=[".*"],
+        scale=UNITREE_G1_29DOF_MIMIC_ACTION_SCALE,
+        use_default_offset=True,
     )
 
 
@@ -139,13 +150,23 @@ class ObservationsCfg:
         """Observations for policy group."""
 
         # observation terms (order preserved)
-        motion_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})
-        motion_anchor_ori_b = ObsTerm(
-            func=mdp.motion_anchor_ori_b, params={"command_name": "motion"}, noise=Unoise(n_min=-0.05, n_max=0.05)
+        motion_command = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "motion"}
         )
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=Unoise(n_min=-0.2, n_max=0.2))
-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.5, n_max=0.5))
+        motion_anchor_ori_b = ObsTerm(
+            func=mdp.motion_anchor_ori_b,
+            params={"command_name": "motion"},
+            noise=Unoise(n_min=-0.05, n_max=0.05),
+        )
+        base_ang_vel = ObsTerm(
+            func=mdp.base_ang_vel, noise=Unoise(n_min=-0.2, n_max=0.2)
+        )
+        joint_pos_rel = ObsTerm(
+            func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01)
+        )
+        joint_vel_rel = ObsTerm(
+            func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.5, n_max=0.5)
+        )
         last_action = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
@@ -154,11 +175,18 @@ class ObservationsCfg:
 
     @configclass
     class PrivilegedCfg(ObsGroup):
-        command = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})
-        motion_anchor_pos_b = ObsTerm(func=mdp.motion_anchor_pos_b, params={"command_name": "motion"})
-        motion_anchor_ori_b = ObsTerm(func=mdp.motion_anchor_ori_b, params={"command_name": "motion"})
+        command = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "motion"}
+        )
+        motion_anchor_pos_b = ObsTerm(
+            func=mdp.motion_anchor_pos_b, params={"command_name": "motion"}
+        )
+        motion_anchor_ori_b = ObsTerm(
+            func=mdp.motion_anchor_ori_b, params={"command_name": "motion"}
+        )
         body_pos = ObsTerm(func=mdp.robot_body_pos_b, params={"command_name": "motion"})
         body_ori = ObsTerm(func=mdp.robot_body_ori_b, params={"command_name": "motion"})
+        # 这里的机器人就是盆骨（实际上就是机器人的其他资产都是建立在盆骨这个link根的基础上的）
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel)
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
@@ -287,7 +315,11 @@ class TerminationsCfg:
     )
     anchor_ori = DoneTerm(
         func=mdp.bad_anchor_ori,
-        params={"asset_cfg": SceneEntityCfg("robot"), "command_name": "motion", "threshold": 0.8},
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "command_name": "motion",
+            "threshold": 0.8,
+        },
     )
     ee_body_pos = DoneTerm(
         func=mdp.bad_motion_body_pos_z_only,

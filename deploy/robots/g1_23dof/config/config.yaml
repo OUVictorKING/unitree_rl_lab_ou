@@ -9,7 +9,8 @@ FSM:
       type: RLBase
   Passive:
     transitions: 
-      FixStand: LT + up.on_pressed
+      # FixStand: LT + up.on_pressed
+      FixStand: up.on_pressed
     mode: [
       1,1,1,1,1,1,
       1,1,1,1,1,1,
@@ -26,8 +27,10 @@ FSM:
     ]
   FixStand:
     transitions: 
-      Passive: LT + B.on_pressed
-      Velocity: RB + X.on_pressed
+      # Passive: LT + B.on_pressed
+      Passive: B.on_pressed
+      # Velocity: RB + X.on_pressed
+      Velocity: X.on_pressed
     kp: [
       100., 100., 100., 150., 40., 40.,
       100., 100., 100., 150., 40., 40.,
@@ -54,5 +57,12 @@ FSM:
     ]
   Velocity:
     transitions: 
-      Passive: LT + B.on_pressed
-    policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_velocity
+      # Passive: LT + B.on_pressed
+      Passive: B.on_pressed
+    # 这个policy是使用ImplicitActuatorCfg训练出来的c
+    # policy_dir: ../../../scripts/rsl_rl/logs/rsl_rl/unitree_g1_23dof_velocity/2026-03-26_16-42-53
+    # policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_velocity/2026-04-09_12-07-45
+    policy_dir: ../../../logs/rsl_rl/g1_23dof_penguin_amp_v2/2026-05-07_09-55-59
+    # policy_dir: ../../../logs/rsl_rl/velocity/v0
+    # policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_velocity/2026-03-31_20-30-00
+    

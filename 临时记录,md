@@ -1,0 +1,598 @@
+Resolved observation sets: 
+     actor :  ['policy']
+     critic :  ['critic']
+--------------------------------------------------------------------------------
+Actor Model: MLPModel(
+  (obs_normalizer): Identity()
+  (distribution): GaussianDistribution()
+  (mlp): MLP(
+    (0): Linear(in_features=390, out_features=512, bias=True)
+    (1): ELU(alpha=1.0)
+    (2): Linear(in_features=512, out_features=256, bias=True)
+    (3): ELU(alpha=1.0)
+    (4): Linear(in_features=256, out_features=128, bias=True)
+    (5): ELU(alpha=1.0)
+    (6): Linear(in_features=128, out_features=23, bias=True)
+  )
+)
+Critic Model: MLPModel(
+  (obs_normalizer): Identity()
+  (mlp): MLP(
+    (0): Linear(in_features=405, out_features=512, bias=True)
+    (1): ELU(alpha=1.0)
+    (2): Linear(in_features=512, out_features=256, bias=True)
+    (3): ELU(alpha=1.0)
+    (4): Linear(in_features=256, out_features=128, bias=True)
+    (5): ELU(alpha=1.0)
+    (6): Linear(in_features=128, out_features=1, bias=True)
+  )
+)
+
+================ DEBUG: robot / obs info ================
+
+==== robot joint names ====
+0 left_hip_pitch_joint
+1 right_hip_pitch_joint
+2 waist_yaw_joint
+3 left_hip_roll_joint
+4 right_hip_roll_joint
+5 left_shoulder_pitch_joint
+6 right_shoulder_pitch_joint
+7 left_hip_yaw_joint
+8 right_hip_yaw_joint
+9 left_shoulder_roll_joint
+10 right_shoulder_roll_joint
+11 left_knee_joint
+12 right_knee_joint
+13 left_shoulder_yaw_joint
+14 right_shoulder_yaw_joint
+15 left_ankle_pitch_joint
+16 right_ankle_pitch_joint
+17 left_elbow_joint
+18 right_elbow_joint
+19 left_ankle_roll_joint
+20 right_ankle_roll_joint
+21 left_wrist_roll_joint
+22 right_wrist_roll_joint
+
+==== default joint pos (all joints) ====
+[-0.1  -0.1   0.    0.    0.    0.3   0.3   0.    0.    0.25 -0.25  0.3
+  0.3   0.    0.   -0.2  -0.2   0.97  0.97  0.    0.    0.15 -0.15]
+
+==== action joint ids ====
+slice(None, None, None)
+
+==== action joint names ====
+[WARN] failed to print action joint info: 'slice' object is not iterable
+
+==== observation keys ====
+['policy', 'critic']
+
+==== policy obs shape ====
+torch.Size([256, 390])
+policy obs first env:
+[ 3.3638135e-02 -3.5828490e-02 -1.6919119e-02  3.3638135e-02
+ -3.5828490e-02 -1.6919119e-02  3.3638135e-02 -3.5828490e-02
+ -1.6919119e-02  3.3638135e-02 -3.5828490e-02 -1.6919119e-02
+  3.3638135e-02 -3.5828490e-02 -1.6919119e-02 -4.0334336e-02
+  1.9521412e-02 -1.0158938e+00 -4.0334336e-02  1.9521412e-02
+ -1.0158938e+00 -4.0334336e-02  1.9521412e-02 -1.0158938e+00
+ -4.0334336e-02  1.9521412e-02 -1.0158938e+00 -4.0334336e-02
+  1.9521412e-02 -1.0158938e+00 -3.1084454e-02 -2.3154188e-02
+ -5.6066342e-02 -3.1084454e-02 -2.3154188e-02 -5.6066342e-02
+ -3.1084454e-02 -2.3154188e-02 -5.6066342e-02 -3.1084454e-02
+ -2.3154188e-02 -5.6066342e-02 -3.1084454e-02 -2.3154188e-02
+ -5.6066342e-02  3.6251703e-03  5.5143274e-03 -6.0637286e-03
+ -7.4546430e-03 -3.1438512e-03 -8.2240561e-03 -5.6524230e-03
+  4.6099536e-04 -9.2856064e-03  3.5566790e-03 -5.8332141e-03
+  7.7494234e-03  5.7968143e-03 -8.5764239e-03  1.7225035e-03
+  8.7821390e-04 -2.3357323e-03 -2.8867517e-03  3.1874049e-03
+  3.7243236e-03 -8.6352741e-03  6.6504851e-03 -7.6930574e-03
+  3.6251703e-03  5.5143274e-03 -6.0637286e-03 -7.4546430e-03
+ -3.1438512e-03 -8.2240561e-03 -5.6524230e-03  4.6099536e-04
+ -9.2856064e-03  3.5566790e-03 -5.8332141e-03  7.7494234e-03
+  5.7968143e-03 -8.5764239e-03  1.7225035e-03  8.7821390e-04
+ -2.3357323e-03 -2.8867517e-03  3.1874049e-03  3.7243236e-03
+ -8.6352741e-03  6.6504851e-03 -7.6930574e-03  3.6251703e-03
+  5.5143274e-03 -6.0637286e-03 -7.4546430e-03 -3.1438512e-03
+ -8.2240561e-03 -5.6524230e-03  4.6099536e-04 -9.2856064e-03
+  3.5566790e-03 -5.8332141e-03  7.7494234e-03  5.7968143e-03
+ -8.5764239e-03  1.7225035e-03  8.7821390e-04 -2.3357323e-03
+ -2.8867517e-03  3.1874049e-03  3.7243236e-03 -8.6352741e-03
+  6.6504851e-03 -7.6930574e-03  3.6251703e-03  5.5143274e-03
+ -6.0637286e-03 -7.4546430e-03 -3.1438512e-03 -8.2240561e-03
+ -5.6524230e-03  4.6099536e-04 -9.2856064e-03  3.5566790e-03
+ -5.8332141e-03  7.7494234e-03  5.7968143e-03 -8.5764239e-03
+  1.7225035e-03  8.7821390e-04 -2.3357323e-03 -2.8867517e-03
+  3.1874049e-03  3.7243236e-03 -8.6352741e-03  6.6504851e-03
+ -7.6930574e-03  3.6251703e-03  5.5143274e-03 -6.0637286e-03
+ -7.4546430e-03 -3.1438512e-03 -8.2240561e-03 -5.6524230e-03
+  4.6099536e-04 -9.2856064e-03  3.5566790e-03 -5.8332141e-03
+  7.7494234e-03  5.7968143e-03 -8.5764239e-03  1.7225035e-03
+  8.7821390e-04 -2.3357323e-03 -2.8867517e-03  3.1874049e-03
+  3.7243236e-03 -8.6352741e-03  6.6504851e-03 -7.6930574e-03
+ -2.5790751e-02  8.5752727e-03  3.4933150e-02  1.9170821e-02
+  7.0203982e-02  2.9505325e-02  5.4798485e-03  7.3147513e-02
+ -2.4852037e-02 -5.0492454e-02  8.6979987e-03 -4.6049818e-02
+ -4.4980586e-02  1.4288045e-02 -5.8182944e-02  1.4599979e-02
+ -2.6252702e-02  5.2906323e-02 -2.8826774e-03  2.7448179e-03
+  1.7287284e-02 -7.1470581e-02 -7.4315839e-02 -2.5790751e-02
+  8.5752727e-03  3.4933150e-02  1.9170821e-02  7.0203982e-02
+  2.9505325e-02  5.4798485e-03  7.3147513e-02 -2.4852037e-02
+ -5.0492454e-02  8.6979987e-03 -4.6049818e-02 -4.4980586e-02
+  1.4288045e-02 -5.8182944e-02  1.4599979e-02 -2.6252702e-02
+  5.2906323e-02 -2.8826774e-03  2.7448179e-03  1.7287284e-02
+ -7.1470581e-02 -7.4315839e-02 -2.5790751e-02  8.5752727e-03
+  3.4933150e-02  1.9170821e-02  7.0203982e-02  2.9505325e-02
+  5.4798485e-03  7.3147513e-02 -2.4852037e-02 -5.0492454e-02
+  8.6979987e-03 -4.6049818e-02 -4.4980586e-02  1.4288045e-02
+ -5.8182944e-02  1.4599979e-02 -2.6252702e-02  5.2906323e-02
+ -2.8826774e-03  2.7448179e-03  1.7287284e-02 -7.1470581e-02
+ -7.4315839e-02 -2.5790751e-02  8.5752727e-03  3.4933150e-02
+  1.9170821e-02  7.0203982e-02  2.9505325e-02  5.4798485e-03
+  7.3147513e-02 -2.4852037e-02 -5.0492454e-02  8.6979987e-03
+ -4.6049818e-02 -4.4980586e-02  1.4288045e-02 -5.8182944e-02
+  1.4599979e-02 -2.6252702e-02  5.2906323e-02 -2.8826774e-03
+  2.7448179e-03  1.7287284e-02 -7.1470581e-02 -7.4315839e-02
+ -2.5790751e-02  8.5752727e-03  3.4933150e-02  1.9170821e-02
+  7.0203982e-02  2.9505325e-02  5.4798485e-03  7.3147513e-02
+ -2.4852037e-02 -5.0492454e-02  8.6979987e-03 -4.6049818e-02
+ -4.4980586e-02  1.4288045e-02 -5.8182944e-02  1.4599979e-02
+ -2.6252702e-02  5.2906323e-02 -2.8826774e-03  2.7448179e-03
+  1.7287284e-02 -7.1470581e-02 -7.4315839e-02  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00  0.0000000e+00  0.0000000e+00
+  0.0000000e+00  0.0000000e+00]
+
+==== critic obs shape ====
+torch.Size([256, 405])
+
+================ END DEBUG INFO ================
+
+
+下面是isaac拿到的第一帧的obs以及action
+================ ISAAC FIRST FRAME DEBUG ================
+[ISAAC] actor_obs shape: (1, 390)
+[ISAAC] action shape   : (1, 23)
+
+[ISAAC] actor_obs[0] full =
+[ 0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.  -1.   0.   0.  -1.   0.   0.  -1.   0.   0.  -1.   0.   0.  -1.   0.1  0.   0.   0.1  0.   0.   0.1  0.   0.   0.1  0.   0.   0.1
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0. ]
+
+[ISAAC] action[0] full =
+[-0.01413211 -0.14253104 -0.00722166  0.18817908 -0.03633919  0.04625554  0.01906522 -0.14751129  0.04486154  0.24149548 -0.14552791 -0.29060036 -0.18737112  0.05897826 -0.03386874  0.32454354  0.09826961 -0.00380365
+  0.10864194 -0.08054838  0.07003916  0.00306156  0.01329366]
+
+[ISAAC] action min/max/mean = -0.29060036 0.32454354 0.0055317017
+
+[ISAAC] ang_vel history =
+[[0. 0. 0.]
+ [0. 0. 0.]
+ [0. 0. 0.]
+ [0. 0. 0.]
+ [0. 0. 0.]]
+
+[ISAAC] gravity history =
+[[ 0.  0. -1.]
+ [ 0.  0. -1.]
+ [ 0.  0. -1.]
+ [ 0.  0. -1.]
+ [ 0.  0. -1.]]
+
+[ISAAC] cmd history =
+[[0.1 0.  0. ]
+ [0.1 0.  0. ]
+ [0.1 0.  0. ]
+ [0.1 0.  0. ]
+ [0.1 0.  0. ]]
+
+[ISAAC] qpos_rel history =
+[[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]]
+
+[ISAAC] qvel_rel history =
+[[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]]
+
+[ISAAC] last_action history =
+[[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]]
+=============== END ISAAC FIRST FRAME DEBUG ===============
+
+
+
+
+
+mujoco的是下面的记录：
+(G1_sim2sim) woan@woa:~/HumanoidProject/g1_deploy_mujoco$ /home/woan/miniforge/envs/G1_sim2sim/bin/python /home/woan/HumanoidProject/g1_deploy_mujoco/g1_23dof_sim2sim.py
+[INFO] Loading JIT: /home/woan/HumanoidProject/unitree_rl_lab/scripts/rsl_rl/logs/rsl_rl/unitree_g1_23dof_velocity/2026-03-17_12-17-17/exported/policy_jit.pt
+[INFO] Loading XML: /home/woan/HumanoidProject/unitree_rl_lab/unitree_ros/robots/g1_description/g1_23dof.xml
+
+[INFO] Training joint order -> MuJoCo mapping:
+  [00] left_hip_pitch_joint         joint_id=1  qpos=7  qvel=6  act=0  kp= 100.0 kd= 2.0 tau=  88.0 vel= 32.0
+  [01] right_hip_pitch_joint        joint_id=7  qpos=13 qvel=12 act=6  kp= 100.0 kd= 2.0 tau=  88.0 vel= 32.0
+  [02] waist_yaw_joint              joint_id=13 qpos=19 qvel=18 act=12 kp= 200.0 kd= 5.0 tau=  88.0 vel= 32.0
+  [03] left_hip_roll_joint          joint_id=2  qpos=8  qvel=7  act=1  kp= 100.0 kd= 2.0 tau= 139.0 vel= 20.0
+  [04] right_hip_roll_joint         joint_id=8  qpos=14 qvel=13 act=7  kp= 100.0 kd= 2.0 tau= 139.0 vel= 20.0
+  [05] left_shoulder_pitch_joint    joint_id=14 qpos=20 qvel=19 act=13 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [06] right_shoulder_pitch_joint   joint_id=19 qpos=25 qvel=24 act=18 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [07] left_hip_yaw_joint           joint_id=3  qpos=9  qvel=8  act=2  kp= 100.0 kd= 2.0 tau=  88.0 vel= 32.0
+  [08] right_hip_yaw_joint          joint_id=9  qpos=15 qvel=14 act=8  kp= 100.0 kd= 2.0 tau=  88.0 vel= 32.0
+  [09] left_shoulder_roll_joint     joint_id=15 qpos=21 qvel=20 act=14 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [10] right_shoulder_roll_joint    joint_id=20 qpos=26 qvel=25 act=19 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [11] left_knee_joint              joint_id=4  qpos=10 qvel=9  act=3  kp= 150.0 kd= 4.0 tau= 139.0 vel= 20.0
+  [12] right_knee_joint             joint_id=10 qpos=16 qvel=15 act=9  kp= 150.0 kd= 4.0 tau= 139.0 vel= 20.0
+  [13] left_shoulder_yaw_joint      joint_id=16 qpos=22 qvel=21 act=15 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [14] right_shoulder_yaw_joint     joint_id=21 qpos=27 qvel=26 act=20 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [15] left_ankle_pitch_joint       joint_id=5  qpos=11 qvel=10 act=4  kp=  40.0 kd= 2.0 tau=  35.0 vel= 30.0
+  [16] right_ankle_pitch_joint      joint_id=11 qpos=17 qvel=16 act=10 kp=  40.0 kd= 2.0 tau=  35.0 vel= 30.0
+  [17] left_elbow_joint             joint_id=17 qpos=23 qvel=22 act=16 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [18] right_elbow_joint            joint_id=22 qpos=28 qvel=27 act=21 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [19] left_ankle_roll_joint        joint_id=6  qpos=12 qvel=11 act=5  kp=  40.0 kd= 2.0 tau=  35.0 vel= 30.0
+  [20] right_ankle_roll_joint       joint_id=12 qpos=18 qvel=17 act=11 kp=  40.0 kd= 2.0 tau=  35.0 vel= 30.0
+  [21] left_wrist_roll_joint        joint_id=18 qpos=24 qvel=23 act=17 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+  [22] right_wrist_roll_joint       joint_id=23 qpos=29 qvel=28 act=22 kp=  40.0 kd= 1.0 tau=  25.0 vel= 37.0
+[INFO] sim2sim initialized.
+[INFO] cmd = vx=0.1, vy=0.0, wz=0.0
+[INFO] sim_dt=0.005, decimation=4, control_dt=0.02
+[INFO] torque_scale=0.25
+[INFO] kp_scale=1.0, kd_scale=1.0
+[INFO] settle_time=0.0
+[INFO] duration=22260.0
+
+================ MUJOCO FIRST FRAME DEBUG ================
+[MUJOCO] obs shape   = (390,)
+[MUJOCO] action shape= (23,)
+
+[MUJOCO] obs full =
+[ 0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.  -1.   0.   0.  -1.   0.   0.  -1.   0.   0.  -1.   0.   0.  -1.   0.1  0.   0.   0.1  0.   0.   0.1  0.   0.   0.1  0.   0.   0.1
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+  0.   0.   0. ]
+
+[MUJOCO] action full =
+[-0.01413207 -0.14253105 -0.00722167  0.18817908 -0.03633916  0.04625556  0.01906522 -0.14751127  0.04486153  0.2414955  -0.14552794 -0.29060033 -0.18737109  0.05897827 -0.03386871  0.32454357  0.09826964 -0.00380366
+  0.10864197 -0.08054836  0.07003915  0.00306154  0.01329365]
+
+[MUJOCO] action min/max/mean = -0.29060033 0.32454357 0.0055317115
+
+[MUJOCO] current ang_vel =
+[0. 0. 0.]
+
+[MUJOCO] current gravity =
+[ 0.  0. -1.]
+
+[MUJOCO] current cmd =
+[0.1 0.  0. ]
+
+[MUJOCO] current qpos_rel =
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+[MUJOCO] current qvel_rel =
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+[MUJOCO] current last_action =
+[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+[MUJOCO] ang_vel history =
+[[0. 0. 0.]
+ [0. 0. 0.]
+ [0. 0. 0.]
+ [0. 0. 0.]
+ [0. 0. 0.]]
+
+[MUJOCO] gravity history =
+[[ 0.  0. -1.]
+ [ 0.  0. -1.]
+ [ 0.  0. -1.]
+ [ 0.  0. -1.]
+ [ 0.  0. -1.]]
+
+[MUJOCO] cmd history =
+[[0.1 0.  0. ]
+ [0.1 0.  0. ]
+ [0.1 0.  0. ]
+ [0.1 0.  0. ]
+ [0.1 0.  0. ]]
+
+[MUJOCO] qpos_rel history =
+[[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]]
+
+[MUJOCO] qvel_rel history =
+[[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]]
+
+[MUJOCO] last_action history =
+[[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+ [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]]
+=============== END MUJOCO FIRST FRAME DEBUG ===============
+
+
+
+
+# 记录isaac 执行器的一些信息，因为unitree自己没有使用这些执行器：
+Creating window for environment.
+[INFO]: Completed setting up the environment...
+[INFO] Loading JIT policy from: /home/woan/HumanoidProject/unitree_rl_lab/scripts/rsl_rl/logs/rsl_rl/unitree_g1_23dof_velocity/2026-03-17_12-17-17/exported/policy_jit.pt
+
+================ ISAAC ACTUATOR CFG DEBUG ================
+robot cfg actuator groups: ['N7520-14.3', 'N7520-22.5', 'N5020-16', 'N5020-16-parallel']
+
+[CFG] group = N7520-14.3
+type = <class 'isaaclab.actuators.actuator_pd_cfg.ImplicitActuatorCfg'>
+joint_names_expr = ['.*_hip_pitch_.*', '.*_hip_yaw_.*', 'waist_yaw_joint']
+stiffness = {'.*_hip_.*': 100.0, 'waist_yaw_joint': 200.0}
+damping = {'.*_hip_.*': 2.0, 'waist_yaw_joint': 5.0}
+armature = 0.01
+effort_limit = 88
+velocity_limit = 32.0
+effort_limit_sim = 88
+velocity_limit_sim = 32.0
+friction = None
+dynamic_friction = None
+viscous_friction = None
+
+[CFG] group = N7520-22.5
+type = <class 'isaaclab.actuators.actuator_pd_cfg.ImplicitActuatorCfg'>
+joint_names_expr = ['.*_hip_roll_.*', '.*_knee_.*']
+stiffness = {'.*_hip_roll_.*': 100.0, '.*_knee_.*': 150.0}
+damping = {'.*_hip_roll_.*': 2.0, '.*_knee_.*': 4.0}
+armature = 0.01
+effort_limit = 139
+velocity_limit = 20.0
+effort_limit_sim = 139
+velocity_limit_sim = 20.0
+friction = None
+dynamic_friction = None
+viscous_friction = None
+
+[CFG] group = N5020-16
+type = <class 'isaaclab.actuators.actuator_pd_cfg.ImplicitActuatorCfg'>
+joint_names_expr = ['.*_shoulder_.*', '.*_elbow_.*', '.*_wrist_roll_.*']
+stiffness = 40.0
+damping = 1.0
+armature = 0.01
+effort_limit = 25
+velocity_limit = 37
+effort_limit_sim = 25
+velocity_limit_sim = 37
+friction = None
+dynamic_friction = None
+viscous_friction = None
+
+[CFG] group = N5020-16-parallel
+type = <class 'isaaclab.actuators.actuator_pd_cfg.ImplicitActuatorCfg'>
+joint_names_expr = ['.*ankle.*']
+stiffness = 40.0
+damping = 2.0
+armature = 0.01
+effort_limit = 35
+velocity_limit = 30
+effort_limit_sim = 35
+velocity_limit_sim = 30
+friction = None
+dynamic_friction = None
+viscous_friction = None
+=============== END ISAAC ACTUATOR CFG DEBUG ===============
+
+2026-03-18T07:13:01Z [16,054ms] [Warning] [omni.physx.fabric.plugin] FabricManager::initializePointInstancer mismatched prototypes on point instancer: /Visuals/Command/velocity_goal.
+2026-03-18T07:13:01Z [16,054ms] [Warning] [omni.physx.fabric.plugin] FabricManager::initializePointInstancer mismatched prototypes on point instancer: /Visuals/Command/velocity_current.
+
+================ ISAAC ACTUATOR RUNTIME DEBUG ================
+
+================ ISAAC JOINT DEBUG ================
+joint_pos shape = torch.Size([1, 23])
+joint_vel shape = torch.Size([1, 23])
+joint_names = ['left_hip_pitch_joint', 'right_hip_pitch_joint', 'waist_yaw_joint', 'left_hip_roll_joint', 'right_hip_roll_joint', 'left_shoulder_pitch_joint', 'right_shoulder_pitch_joint', 'left_hip_yaw_joint', 'right_hip_yaw_joint', 'left_shoulder_roll_joint', 'right_shoulder_roll_joint', 'left_knee_joint', 'right_knee_joint', 'left_shoulder_yaw_joint', 'right_shoulder_yaw_joint', 'left_ankle_pitch_joint', 'right_ankle_pitch_joint', 'left_elbow_joint', 'right_elbow_joint', 'left_ankle_roll_joint', 'right_ankle_roll_joint', 'left_wrist_roll_joint', 'right_wrist_roll_joint']
+joint_pos[0] = [-0.1  -0.1   0.    0.    0.    0.3   0.3   0.    0.    0.25 -0.25  0.3
+  0.3   0.    0.   -0.2  -0.2   0.97  0.97  0.    0.    0.15 -0.15]
+joint_vel[0] = [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+=============== END ISAAC JOINT DEBUG ===============
+
+runtime actuator groups: ['N7520-14.3', 'N7520-22.5', 'N5020-16', 'N5020-16-parallel']
+
+[RUNTIME] group = N7520-14.3
+type = <class 'isaaclab.actuators.actuator_pd.ImplicitActuator'>
+joint_names = ['left_hip_pitch_joint', 'right_hip_pitch_joint', 'waist_yaw_joint', 'left_hip_yaw_joint', 'right_hip_yaw_joint']
+joint_indices = tensor([0, 1, 2, 7, 8])
+stiffness = tensor([[100., 100., 200., 100., 100.]])
+damping = tensor([[2., 2., 5., 2., 2.]])
+armature = tensor([[0.0100, 0.0100, 0.0100, 0.0100, 0.0100]])
+effort_limit = tensor([[88., 88., 88., 88., 88.]])
+velocity_limit = tensor([[32., 32., 32., 32., 32.]])
+
+[RUNTIME] group = N7520-22.5
+type = <class 'isaaclab.actuators.actuator_pd.ImplicitActuator'>
+joint_names = ['left_hip_roll_joint', 'right_hip_roll_joint', 'left_knee_joint', 'right_knee_joint']
+joint_indices = tensor([ 3,  4, 11, 12])
+stiffness = tensor([[100., 100., 150., 150.]])
+damping = tensor([[2., 2., 4., 4.]])
+armature = tensor([[0.0100, 0.0100, 0.0100, 0.0100]])
+effort_limit = tensor([[139., 139., 139., 139.]])
+velocity_limit = tensor([[20., 20., 20., 20.]])
+
+[RUNTIME] group = N5020-16
+type = <class 'isaaclab.actuators.actuator_pd.ImplicitActuator'>
+joint_names = ['left_shoulder_pitch_joint', 'right_shoulder_pitch_joint', 'left_shoulder_roll_joint', 'right_shoulder_roll_joint', 'left_shoulder_yaw_joint', 'right_shoulder_yaw_joint', 'left_elbow_joint', 'right_elbow_joint', 'left_wrist_roll_joint', 'right_wrist_roll_joint']
+joint_indices = tensor([ 5,  6,  9, 10, 13, 14, 17, 18, 21, 22])
+stiffness = tensor([[40., 40., 40., 40., 40., 40., 40., 40., 40., 40.]])
+damping = tensor([[1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]])
+armature = tensor([[0.0100, 0.0100, 0.0100, 0.0100, 0.0100, 0.0100, 0.0100, 0.0100, 0.0100,
+         0.0100]])
+effort_limit = tensor([[25., 25., 25., 25., 25., 25., 25., 25., 25., 25.]])
+velocity_limit = tensor([[37., 37., 37., 37., 37., 37., 37., 37., 37., 37.]])
+
+[RUNTIME] group = N5020-16-parallel
+type = <class 'isaaclab.actuators.actuator_pd.ImplicitActuator'>
+joint_names = ['left_ankle_pitch_joint', 'right_ankle_pitch_joint', 'left_ankle_roll_joint', 'right_ankle_roll_joint']
+joint_indices = tensor([15, 16, 19, 20])
+stiffness = tensor([[40., 40., 40., 40.]])
+damping = tensor([[2., 2., 2., 2.]])
+armature = tensor([[0.0100, 0.0100, 0.0100, 0.0100]])
+effort_limit = tensor([[35., 35., 35., 35.]])
+velocity_limit = tensor([[30., 30., 30., 30.]])
+=============== END ISAAC ACTUATOR RUNTIME DEBUG ===============
+
+
+
+################################################################################
+                        Learning iteration 72201/220000                          
+
+                            Total steps: 144310272 
+                       Steps per second: 10859 
+                        Collection time: 5.826s 
+                          Learning time: 0.209s 
+                        Mean value loss: 941467.8953
+                    Mean surrogate loss: -0.0032
+                      Mean entropy loss: -7.7433
+                            Mean reward: -820.87
+                    Mean episode length: 998.11
+                        Mean action std: 0.23
+        Episode_Reward/track_lin_vel_xy: 1.5242
+         Episode_Reward/track_ang_vel_z: 0.7948
+                   Episode_Reward/alive: 0.1493
+    Episode_Reward/base_linear_velocity: -0.0061
+   Episode_Reward/base_angular_velocity: -0.0055
+               Episode_Reward/joint_vel: -0.0545
+               Episode_Reward/joint_acc: -0.0242
+             Episode_Reward/action_rate: -102.5553
+          Episode_Reward/dof_pos_limits: -0.0017
+                  Episode_Reward/energy: -0.0008
+    Episode_Reward/joint_deviation_arms: -0.0380
+  Episode_Reward/joint_deviation_waists: -0.0062
+    Episode_Reward/joint_deviation_legs: -0.0474
+     Episode_Reward/flat_orientation_l2: -0.0052
+             Episode_Reward/base_height: -0.0036
+                    Episode_Reward/gait: 0.1703
+              Episode_Reward/feet_slide: -0.0150
+          Episode_Reward/feet_clearance: 0.2897
+      Episode_Reward/undesired_contacts: -0.0009
+              Curriculum/terrain_levels: 4.0494
+          Curriculum/lin_vel_cmd_levels: 0.8000
+          Curriculum/ang_vel_cmd_levels: 0.1000
+     Metrics/base_velocity/error_vel_xy: 0.1688
+    Metrics/base_velocity/error_vel_yaw: 0.3236
+           Episode_Termination/time_out: 0.9994
+        Episode_Termination/base_height: 0.0006
+    Episode_Termination/bad_orientation: 0.0000
+--------------------------------------------------------------------------------
+                         Iteration time: 6.04s
+                           Time elapsed: 03:49:11
+                                    ETA: 16:22:56
+
+
+################################################################################
+                        Learning iteration 72690/222000                          
+
+                            Total steps: 45285376 
+                       Steps per second: 11975 
+                        Collection time: 5.276s 
+                          Learning time: 0.196s 
+                        Mean value loss: 0.0042
+                    Mean surrogate loss: -0.0083
+                      Mean entropy loss: -4.7886
+                            Mean reward: -8234.63
+                    Mean episode length: 990.61
+                        Mean action std: 0.26
+        Episode_Reward/track_lin_vel_xy: 1.5159
+         Episode_Reward/track_ang_vel_z: 0.7328
+                   Episode_Reward/alive: 0.1500
+    Episode_Reward/base_linear_velocity: -0.0065
+   Episode_Reward/base_angular_velocity: -0.0057
+               Episode_Reward/joint_vel: -0.0674
+               Episode_Reward/joint_acc: -0.0275
+             Episode_Reward/action_rate: -0.0505
+          Episode_Reward/dof_pos_limits: -0.0000
+                  Episode_Reward/energy: -0.0011
+    Episode_Reward/joint_deviation_arms: -0.0445
+  Episode_Reward/joint_deviation_waists: -0.0076
+    Episode_Reward/joint_deviation_legs: -0.0501
+     Episode_Reward/flat_orientation_l2: -0.0056
+             Episode_Reward/base_height: -0.0048
+                    Episode_Reward/gait: 0.2060
+              Episode_Reward/feet_slide: -0.0200
+          Episode_Reward/feet_clearance: 0.2898
+      Episode_Reward/undesired_contacts: -0.0004
+              Curriculum/terrain_levels: 4.4140
+          Curriculum/lin_vel_cmd_levels: 0.8000
+          Curriculum/ang_vel_cmd_levels: 0.1000
+     Metrics/base_velocity/error_vel_xy: 0.1878
+    Metrics/base_velocity/error_vel_yaw: 0.3813
+           Episode_Termination/time_out: 0.9961
+        Episode_Termination/base_height: 0.0039
+    Episode_Termination/bad_orientation: 0.0000
+--------------------------------------------------------------------------------
+                         Iteration time: 5.47s
+                           Time elapsed: 01:06:33
+                                    ETA: 23:42:56
+
+
+
+                                    
+
+
+
+
+
+调试机器人过程：
+运行make -j
+./g1_ctrl --network lo

@@ -14,9 +14,19 @@ import numpy as np
 from isaaclab.app import AppLauncher
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Replay motion from csv file and output to npz file.")
-parser.add_argument("--input_file", "-f", type=str, required=True, help="The path to the input motion csv file.")
-parser.add_argument("--input_fps", type=int, default=60, help="The fps of the input motion.")
+parser = argparse.ArgumentParser(
+    description="Replay motion from csv file and output to npz file."
+)
+parser.add_argument(
+    "--input_file",
+    "-f",
+    type=str,
+    required=True,
+    help="The path to the input motion csv file.",
+)
+parser.add_argument(
+    "--input_fps", type=int, default=60, help="The fps of the input motion."
+)
 parser.add_argument(
     "--frame_range",
     nargs=2,
@@ -28,7 +38,9 @@ parser.add_argument(
     ),
 )
 parser.add_argument("--output_name", type=str, help="The name of the motion npz file.")
-parser.add_argument("--output_fps", type=int, default=50, help="The fps of the output motion.")
+parser.add_argument(
+    "--output_fps", type=int, default=50, help="The fps of the output motion."
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -37,7 +49,9 @@ args_cli = parser.parse_args()
 if not args_cli.output_name:
     # generate at the same location as input file
     args_cli.output_name = (
-        "/".join(args_cli.input_file.split("/")[:-1]) + "/" + args_cli.input_file.split("/")[-1].replace(".csv", ".npz")
+        "/".join(args_cli.input_file.split("/")[:-1])
+        + "/"
+        + args_cli.input_file.split("/")[-1].replace(".csv", ".npz")
     )
 
 
@@ -55,12 +69,19 @@ from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
 from isaaclab.sim import SimulationContext
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul, quat_slerp
+from isaaclab.utils.math import (
+    axis_angle_from_quat,
+    quat_conjugate,
+    quat_mul,
+    quat_slerp,
+)
 
 ##
 # Pre-defined configs
 ##
-from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_29DOF_CFG as ROBOT_CFG  # Currently only support G1-29dof
+from unitree_rl_lab.assets.robots.unitree import (
+    UNITREE_G1_29DOF_CFG as ROBOT_CFG,
+)  # Currently only support G1-29dof
 
 
 @configclass
@@ -68,7 +89,9 @@ class ReplayMotionsSceneCfg(InteractiveSceneCfg):
     """Configuration for a replay motions scene."""
 
     # ground plane
-    ground = AssetBaseCfg(prim_path="/World/defaultGroundPlane", spawn=sim_utils.GroundPlaneCfg())
+    ground = AssetBaseCfg(
+        prim_path="/World/defaultGroundPlane", spawn=sim_utils.GroundPlaneCfg()
+    )
 
     # lights
     sky_light = AssetBaseCfg(
@@ -118,18 +141,27 @@ class MotionLoader:
                 )
             )
         motion = motion.to(torch.float32).to(self.device)
+        # 前3列是base（就是pelvis的位置）
         self.motion_base_poss_input = motion[:, :3]
+        # 4元素的旋转信息，csv里面是x, y, z, w，但是isaac需要的是wxyz的顺序，所以这里调整一下
         self.motion_base_rots_input = motion[:, 3:7]
-        self.motion_base_rots_input = self.motion_base_rots_input[:, [3, 0, 1, 2]]  # convert to wxyz
+        self.motion_base_rots_input = self.motion_base_rots_input[
+            :, [3, 0, 1, 2]
+        ]  # convert to wxyz
+        # 后面29个是29个关节的位置
         self.motion_dof_poss_input = motion[:, 7:]
 
         self.input_frames = motion.shape[0]
         self.duration = (self.input_frames - 1) * self.input_dt
-        print(f"Motion loaded ({self.motion_file}), duration: {self.duration} sec, frames: {self.input_frames}")
+        print(
+            f"Motion loaded ({self.motion_file}), duration: {self.duration} sec, frames: {self.input_frames}"
+        )
 
     def _interpolate_motion(self):
         """Interpolates the motion to the output fps."""
-        times = torch.arange(0, self.duration, self.output_dt, device=self.device, dtype=torch.float32)
+        times = torch.arange(
+            0, self.duration, self.output_dt, device=self.device, dtype=torch.float32
+        )
         self.output_frames = times.shape[0]
         index_0, index_1, blend = self._compute_frame_blend(times)
         self.motion_base_poss = self._lerp(
@@ -152,11 +184,15 @@ class MotionLoader:
             f" {self.output_frames}, output fps: {self.output_fps}"
         )
 
-    def _lerp(self, a: torch.Tensor, b: torch.Tensor, blend: torch.Tensor) -> torch.Tensor:
+    def _lerp(
+        self, a: torch.Tensor, b: torch.Tensor, blend: torch.Tensor
+    ) -> torch.Tensor:
         """Linear interpolation between two tensors."""
         return a * (1 - blend) + b * blend
 
-    def _slerp(self, a: torch.Tensor, b: torch.Tensor, blend: torch.Tensor) -> torch.Tensor:
+    def _slerp(
+        self, a: torch.Tensor, b: torch.Tensor, blend: torch.Tensor
+    ) -> torch.Tensor:
         """Spherical linear interpolation between two quaternions."""
         slerped_quats = torch.zeros_like(a)
         for i in range(a.shape[0]):
@@ -173,9 +209,15 @@ class MotionLoader:
 
     def _compute_velocities(self):
         """Computes the velocities of the motion."""
-        self.motion_base_lin_vels = torch.gradient(self.motion_base_poss, spacing=self.output_dt, dim=0)[0]
-        self.motion_dof_vels = torch.gradient(self.motion_dof_poss, spacing=self.output_dt, dim=0)[0]
-        self.motion_base_ang_vels = self._so3_derivative(self.motion_base_rots, self.output_dt)
+        self.motion_base_lin_vels = torch.gradient(
+            self.motion_base_poss, spacing=self.output_dt, dim=0
+        )[0]
+        self.motion_dof_vels = torch.gradient(
+            self.motion_dof_poss, spacing=self.output_dt, dim=0
+        )[0]
+        self.motion_base_ang_vels = self._so3_derivative(
+            self.motion_base_rots, self.output_dt
+        )
 
     def _so3_derivative(self, rotations: torch.Tensor, dt: float) -> torch.Tensor:
         """Computes the derivative of a sequence of SO3 rotations.
@@ -190,7 +232,9 @@ class MotionLoader:
         q_rel = quat_mul(q_next, quat_conjugate(q_prev))  # shape (B−2, 4)
 
         omega = axis_angle_from_quat(q_rel) / (2.0 * dt)  # shape (B−2, 3)
-        omega = torch.cat([omega[:1], omega, omega[-1:]], dim=0)  # repeat first and last sample
+        omega = torch.cat(
+            [omega[:1], omega, omega[-1:]], dim=0
+        )  # repeat first and last sample
         return omega
 
     def get_next_state(
@@ -233,7 +277,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     # Extract scene entities
     robot = scene["robot"]
-    robot_joint_indexes = robot.find_joints(scene.cfg.robot.joint_sdk_names, preserve_order=True)[0]
+    robot_joint_indexes = robot.find_joints(
+        scene.cfg.robot.joint_sdk_names, preserve_order=True
+    )[0]
 
     # ------- data logger -------------------------------------------------------
     log = {
@@ -288,8 +334,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             log["joint_vel"].append(robot.data.joint_vel[0, :].cpu().numpy().copy())
             log["body_pos_w"].append(robot.data.body_pos_w[0, :].cpu().numpy().copy())
             log["body_quat_w"].append(robot.data.body_quat_w[0, :].cpu().numpy().copy())
-            log["body_lin_vel_w"].append(robot.data.body_lin_vel_w[0, :].cpu().numpy().copy())
-            log["body_ang_vel_w"].append(robot.data.body_ang_vel_w[0, :].cpu().numpy().copy())
+            log["body_lin_vel_w"].append(
+                robot.data.body_lin_vel_w[0, :].cpu().numpy().copy()
+            )
+            log["body_ang_vel_w"].append(
+                robot.data.body_ang_vel_w[0, :].cpu().numpy().copy()
+            )
 
         if reset_flag and not file_saved:
             file_saved = True

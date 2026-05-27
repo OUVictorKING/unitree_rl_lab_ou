@@ -136,5 +136,26 @@ REGISTER_OBSERVATION(gait_phase)
     return obs;
 }
 
+REGISTER_OBSERVATION(gait_phase_offset)
+{
+    float period = params["period"].as<float>();
+    auto offsets = params["offsets"].as<std::vector<float>>();
+    float t = env->episode_length * env->step_dt / period;
+
+    std::vector<float> obs;
+    for (auto offset : offsets)
+    {
+        obs.push_back(std::sin(2.0f * M_PI * std::fmod(t + offset, 1.0f)));
+    }
+    for (auto offset : offsets)
+    {
+        obs.push_back(std::cos(2.0f * M_PI * std::fmod(t + offset, 1.0f)));
+    }
+    for (auto offset : offsets)
+    {
+        obs.push_back(0.38);
+    }
+    return obs;
+}
 }
 }
