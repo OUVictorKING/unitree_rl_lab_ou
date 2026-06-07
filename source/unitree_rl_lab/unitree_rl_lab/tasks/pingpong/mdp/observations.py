@@ -10,13 +10,9 @@ from isaaclab.managers import ManagerTermBase, ObservationTermCfg, SceneEntityCf
 try:
     from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_mul
 except ImportError:  # pragma: no cover - older IsaacLab fallback
-    from isaaclab.utils.math import (
-        quat_apply,
-        quat_mul,
-        quat_rotate_inverse as quat_apply_inverse,
-    )
+    from isaaclab.utils.math import quat_apply, quat_mul, quat_rotate_inverse as quat_apply_inverse
 
-from .commands import PingpongCommand
+from .commands import PingpongCommand, BLADE_NORMAL_LOCAL
 from .events import get_imu_offset_quat, get_obs_delay_steps
 from .motion_loader import yaw_from_wxyz
 
@@ -28,9 +24,7 @@ def _command(env: "ManagerBasedEnv", command_name: str) -> PingpongCommand:
     return env.command_manager.get_term(command_name)
 
 
-def _perceived_root_quat(
-    env: "ManagerBasedEnv", asset_name: str = "robot"
-) -> torch.Tensor:
+def _perceived_root_quat(env: "ManagerBasedEnv", asset_name: str = "robot") -> torch.Tensor:
     """Return root_quat_w pre-multiplied by per-env IMU offset (identity if event off)."""
     asset: RigidObject = env.scene[asset_name]
     q_true = asset.data.root_quat_w
@@ -38,18 +32,14 @@ def _perceived_root_quat(
     return quat_mul(q_true, q_offset)
 
 
-def base_yaw_encoding(
-    env: "ManagerBasedEnv", asset_cfg_name: str = "robot"
-) -> torch.Tensor:
+def base_yaw_encoding(env: "ManagerBasedEnv", asset_cfg_name: str = "robot") -> torch.Tensor:
     """Clean base yaw cos/sin encoding (used by Critic / clean reward computation)."""
     asset: RigidObject = env.scene[asset_cfg_name]
     yaw = yaw_from_wxyz(asset.data.root_quat_w)
     return torch.stack((torch.cos(yaw), torch.sin(yaw)), dim=-1)
 
 
-def base_yaw_encoding_imu(
-    env: "ManagerBasedEnv", asset_cfg_name: str = "robot"
-) -> torch.Tensor:
+def base_yaw_encoding_imu(env: "ManagerBasedEnv", asset_cfg_name: str = "robot") -> torch.Tensor:
     """Base yaw cos/sin encoding through perceived (IMU-offset) root quat for Actor."""
     yaw = yaw_from_wxyz(_perceived_root_quat(env, asset_cfg_name))
     return torch.stack((torch.cos(yaw), torch.sin(yaw)), dim=-1)
@@ -73,9 +63,7 @@ def projected_gravity_imu(
     return quat_apply_inverse(q_perc, asset.data.GRAVITY_VEC_W)
 
 
-def pingpong_base_position_error(
-    env: "ManagerBasedEnv", command_name: str, noisy: bool = False
-) -> torch.Tensor:
+def pingpong_base_position_error(env: "ManagerBasedEnv", command_name: str, noisy: bool = False) -> torch.Tensor:
     cmd = _command(env, command_name)
     target = cmd.p_base_xy_world
     if noisy:
@@ -83,21 +71,15 @@ def pingpong_base_position_error(
     return target - cmd.robot.data.root_pos_w[:, :2]
 
 
-def pingpong_hit_position_b(
-    env: "ManagerBasedEnv", command_name: str, noisy: bool = False
-) -> torch.Tensor:
+def pingpong_hit_position_b(env: "ManagerBasedEnv", command_name: str, noisy: bool = False) -> torch.Tensor:
     cmd = _command(env, command_name)
     target = cmd.p_hit_world
     if noisy:
         target = target + cmd.noise_p
-    return quat_apply_inverse(
-        cmd.robot.data.root_quat_w, target - cmd.robot.data.root_pos_w
-    )
+    return quat_apply_inverse(cmd.robot.data.root_quat_w, target - cmd.robot.data.root_pos_w)
 
 
-def pingpong_racket_velocity_w(
-    env: "ManagerBasedEnv", command_name: str, noisy: bool = False
-) -> torch.Tensor:
+def pingpong_racket_velocity_w(env: "ManagerBasedEnv", command_name: str, noisy: bool = False) -> torch.Tensor:
     cmd = _command(env, command_name)
     vel = cmd.v_racket_hat_world
     if noisy:
@@ -105,9 +87,7 @@ def pingpong_racket_velocity_w(
     return vel
 
 
-def pingpong_t_to_hit(
-    env: "ManagerBasedEnv", command_name: str, noisy: bool = False
-) -> torch.Tensor:
+def pingpong_t_to_hit(env: "ManagerBasedEnv", command_name: str, noisy: bool = False) -> torch.Tensor:
     cmd = _command(env, command_name)
     t = cmd.t_to_hit.unsqueeze(-1)
     if noisy:
@@ -115,11 +95,43 @@ def pingpong_t_to_hit(
     return t
 
 
+def pingpong_swing_type(env: "ManagerBasedEnv", command_name: str) -> torch.Tensor:
+    # Signed swing flag: forehand=+1, backhand=-1. Matches the sign convention
+    # used by goal_orientation reward (`sign = 1 - 2*swing_type`), so the
+    # network sees the same encoding the reward uses. Resampled with
+    # swing_type at every reset; constant across an episode.
+    cmd = _command(env, command_name)
+    return (1.0 - 2.0 * cmd.swing_type.float()).unsqueeze(-1)
+
+
+def pingpong_active_face_b(env: "ManagerBasedEnv", command_name: str, noisy: bool = False) -> torch.Tensor:
+    """Current ACTIVE paddle-face normal in the base frame, SIGNED by swing_type
+    (forehand +n_blade, backhand -n_blade) — exactly the vector goal_orientation
+    aligns with n_target. The actor otherwise only sees racket_vel and must infer
+    its face from raw joint angles via FK; this is the likely reason face alignment
+    was the stubborn bottleneck. Signed (not the raw front normal) so the objective
+    is uniform across swings: "point this at target_normal". This is FEEDBACK about
+    the current paddle (not a swing label in the command), so it does not reintroduce
+    the swing_type ±1 mode-collapse. Deployable: FK from joint encoders (paddle is
+    rigid to the wrist). `noisy` accepted for signature parity; no face-noise model."""
+    cmd = _command(env, command_name)
+    normal_local = torch.tensor(BLADE_NORMAL_LOCAL, dtype=torch.float32, device=cmd.device).expand(cmd.num_envs, 3)
+    n_blade_w = quat_apply(cmd.robot_blade_quat_w, normal_local)
+    sign = (1.0 - 2.0 * cmd.swing_type.float()).unsqueeze(-1)
+    return quat_apply_inverse(cmd.robot.data.root_quat_w, sign * n_blade_w)
+
+
+def pingpong_target_normal_b(env: "ManagerBasedEnv", command_name: str, noisy: bool = False) -> torch.Tensor:
+    """Target paddle-face normal n_target (planner's desired outgoing-ball normal) in
+    the base frame. Paired with pingpong_active_face_b so the actor sees current-vs-
+    desired face directly and minimises the angle between them."""
+    cmd = _command(env, command_name)
+    return quat_apply_inverse(cmd.robot.data.root_quat_w, cmd.n_target_world)
+
+
 def pingpong_ref_body_state(env: "ManagerBasedEnv", command_name: str) -> torch.Tensor:
     cmd = _command(env, command_name)
-    return torch.cat(
-        (cmd.ref_state.body_pos_w, cmd.ref_state.body_quat_w), dim=-1
-    ).reshape(env.num_envs, -1)
+    return torch.cat((cmd.ref_state.body_pos_w, cmd.ref_state.body_quat_w), dim=-1).reshape(env.num_envs, -1)
 
 
 def pingpong_ref_joint_state(env: "ManagerBasedEnv", command_name: str) -> torch.Tensor:
@@ -128,18 +140,14 @@ def pingpong_ref_joint_state(env: "ManagerBasedEnv", command_name: str) -> torch
 
 
 def episode_time_left(env: "ManagerBasedRLEnv") -> torch.Tensor:
-    remaining = (env.max_episode_length - env.episode_length_buf).to(
-        torch.float32
-    ) * env.step_dt
+    remaining = (env.max_episode_length - env.episode_length_buf).to(torch.float32) * env.step_dt
     return remaining.unsqueeze(-1)
 
 
 _INNER_FUNC_REGISTRY: dict[str, Callable[..., torch.Tensor]] = {}
 
 
-def register_delayable_func(
-    func: Callable[..., torch.Tensor],
-) -> Callable[..., torch.Tensor]:
+def register_delayable_func(func: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
     """Decorator-friendly registration of inner observation callables for ``DelayedObservation``.
 
     The wrapper resolves ``inner_func`` by name to keep ObservationTermCfg.params
@@ -188,9 +196,6 @@ class DelayedObservation(ManagerTermBase):
             return
         self._buffer[env_ids] = 0.0
 
-    # def __call__(self, env: "ManagerBasedEnv", **kwargs) -> torch.Tensor:  # type: ignore[override]
-    #     merged = {**self._inner_params, **{k: v for k, v in kwargs.items() if k not in ("inner_func", "inner_params")}}
-    #     cur = self._inner_func(env, **merged)
     def __call__(
         self,
         env: "ManagerBasedEnv",

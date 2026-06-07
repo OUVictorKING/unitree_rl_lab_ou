@@ -88,6 +88,8 @@
 #include "FSMState.h"
 #include "isaaclab/envs/mdp/actions/joint_actions.h"
 #include "isaaclab/envs/mdp/terminations.h"
+#include <atomic>
+#include <chrono>
 #include <vector>
 
 // velocity模式的入口文件
@@ -102,6 +104,13 @@ public:
 
     void enter()
     {
+        env->robot->update();
+        enter_time_ = std::chrono::steady_clock::now();
+        entry_hold_q_.assign(
+            env->robot->data.joint_pos.data(),
+            env->robot->data.joint_pos.data() + env->robot->data.joint_pos.size());
+        policy_output_ready_.store(false);
+
         // 按 action idx -> sdk_id 的映射设置 PD
         for (int i = 0; i < (int)env->robot->data.joint_ids_map.size(); ++i)
         {
@@ -118,12 +127,10 @@ public:
             // lowcmd->msg_.motor_cmd()[i].dq() = 0.0f;
             // lowcmd->msg_.motor_cmd()[i].tau() = 0.0f;
 
-            // 进入 Velocity 时，先把目标位置放到训练 offset
-            lowcmd->msg_.motor_cmd()[sdk_id].q() = action_offset_[i];
+            // 进入 Velocity 时，先 hold 当前实测关节位姿，等第一帧 policy 输出后再接管。
+            lowcmd->msg_.motor_cmd()[sdk_id].q() = entry_hold_q_[i];
             // lowcmd->msg_.motor_cmd()[sdk_id].q() = action_offset_[sdk_id];
         }
-
-        env->robot->update();
 
         policy_thread_running = true;
         policy_thread = std::thread([this]
@@ -138,6 +145,7 @@ public:
             while (policy_thread_running)
             {
                 env->step();
+                policy_output_ready_.store(true);
                 std::this_thread::sleep_until(sleepTill);
                 sleepTill += dt;
             } });
@@ -148,6 +156,7 @@ public:
     void exit()
     {
         policy_thread_running = false;
+        policy_output_ready_.store(false);
         if (policy_thread.joinable())
         {
             policy_thread.join();
@@ -158,6 +167,10 @@ private:
     std::unique_ptr<isaaclab::ManagerBasedRLEnv> env;
     std::thread policy_thread;
     bool policy_thread_running = false;
+    std::atomic<bool> policy_output_ready_{false};
+    std::vector<float> entry_hold_q_;
+    std::chrono::steady_clock::time_point enter_time_{};
+    float bad_orientation_grace_s_ = 0.0f;
 };
 
 REGISTER_FSM(State_RLBase)

@@ -119,7 +119,7 @@ def plan_pingpong_hits(
     table_half_x: float = 1.37,
     table_half_y: float = 0.7625,
     expert_offset_base: torch.Tensor | None = None,
-    y_mid_base: float = 0.157,
+    y_mid_base: float | None = None,
     flight_time: torch.Tensor | float = 0.45,
     paddle_cor: torch.Tensor | float = 0.85,
     dt: float = 0.01,
@@ -247,18 +247,23 @@ def plan_pingpong_hits(
         out.v_racket_hat_world = v_racket
 
     if expert_offset_base is None:
-        expert_offset_base = torch.tensor(
-            ((0.496, 0.208), (0.428, 0.106)),
-            device=device,
-            dtype=dtype,
+        raise ValueError(
+            "expert_offset_base must be provided. The hardcoded fallback "
+            "((0.498, -0.462), (0.556, 0.024)) was removed in the data-driven "
+            "refactor — pass clip-derived offsets from PingpongCommand."
         )
-    else:
-        expert_offset_base = expert_offset_base.to(device=device, dtype=dtype)
+    if y_mid_base is None:
+        raise ValueError(
+            "y_mid_base must be provided. Removed default in data-driven refactor; "
+            "pass command.cfg.y_mid_base (auto-derived in PingpongCommand.__init__)."
+        )
+    expert_offset_base = expert_offset_base.to(device=device, dtype=dtype)
 
     yaw = yaw_from_wxyz(robot_root_quat_world)
     diff_xy = out.p_hit_world[:, :2] - robot_root_pos_world[:, :2]
     hit_base_xy = _rotate_yaw_2d(diff_xy, -yaw)
-    forehand = hit_base_xy[:, 1] > float(y_mid_base)
+    swing_y_sign = 1.0 if float(expert_offset_base[0, 1]) > float(expert_offset_base[1, 1]) else -1.0
+    forehand = (hit_base_xy[:, 1] - float(y_mid_base)) * swing_y_sign > 0
     out.swing_type = torch.where(forehand, torch.zeros_like(out.swing_type), torch.ones_like(out.swing_type))
     offsets = expert_offset_base[out.swing_type]
     offsets_world = _rotate_yaw_2d(offsets, yaw)

@@ -88,6 +88,12 @@ from isaaclab_tasks.utils import get_checkpoint_path
 import unitree_rl_lab.tasks  # noqa: F401
 from unitree_rl_lab.utils.parser_cfg import parse_env_cfg
 
+from checkpoint_compat import (
+    get_runner_actor_state_dict,
+    load_checkpoint_summary,
+    print_actor_checkpoint_compat_report,
+)
+
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -270,23 +276,37 @@ def main():
 
     print(f"[INFO] Using rsl_rl runner: {type(runner).__name__}")
 
-    # AMP runner: only the actor (+ optional critic) is needed for export —
-    # skip discriminator / AMP optimizer / AMP normalizer so the load path
-    # does not fail on checkpoints trained with different curriculum state.
-    if type(runner).__name__ == "OnPolicyAmpRunner":
-        export_load_cfg = {
-            "actor": True,
-            "critic": True,
-            "optimizer": False,
-            "iteration": True,
-            "rnd": False,
-            "amp": False,
-            "amp_optimizer": False,
-            "amp_normalizer": False,
-        }
-        runner.load(resume_path, load_cfg=export_load_cfg)
-    else:
-        runner.load(resume_path)
+    # Export only needs the actor.  Do an actor-only shape check and skip the
+    # critic/optimizer/iteration/AMP state so policy export still works when the
+    # task's critic privileged observation layout changed.
+    checkpoint_summary = load_checkpoint_summary(resume_path)
+    target_actor_sd = get_runner_actor_state_dict(runner)
+    compatible, _ = print_actor_checkpoint_compat_report(
+        checkpoint_summary,
+        args_cli.task,
+        target_actor_sd,
+    )
+    if not compatible:
+        raise RuntimeError(
+            "Checkpoint is not compatible with the current export task. "
+            "Actor state_dict keys/shapes must match exactly."
+        )
+
+    export_load_cfg = {
+        "actor": True,
+        "critic": False,
+        "optimizer": False,
+        "iteration": False,
+        "rnd": False,
+        "amp": False,
+        "amp_optimizer": False,
+        "amp_normalizer": False,
+    }
+    print(
+        "[INFO] Checkpoint load mode: export actor-only, "
+        "critic=False, optimizer=False, iteration=False"
+    )
+    runner.load(resume_path, load_cfg=export_load_cfg)
 
     # -------------------------------------------------------------------------
     # Get observations and infer actor input key

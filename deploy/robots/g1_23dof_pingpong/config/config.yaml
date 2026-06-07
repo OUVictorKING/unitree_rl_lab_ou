@@ -1,0 +1,305 @@
+FSM:
+  _:
+    Passive:
+      id: 1
+    FixStand:
+      id: 2
+    Velocity:
+      id: 3
+      type: RLBase
+
+    Mimic_Dance_102:
+      id: 101
+      type: Mimic
+    Mimic_gangnanm_style:
+      id: 102
+      type: Mimic
+    Pingpong:
+      id: 10
+      type: Pingpong
+
+  Passive:
+    transitions:
+      FixStand: up.on_pressed
+    mode: [
+      1,1,1,1,1,1,
+      1,1,1,1,1,1,
+      1,1,1,
+      1,1,1,1,1,1,1,
+      1,1,1,1,1,1,1,
+    ]
+    kd: [
+      3,3,3,3,3,3,
+      3,3,3,3,3,3,
+      3,3,3,
+      3,3,3,3,3,3,3,
+      3,3,3,3,3,3,3,
+    ]
+
+  FixStand:
+    transitions:
+      Passive: B.on_pressed
+      Velocity: X.on_pressed
+    kp: [
+      100., 100., 100., 150., 40., 40.,
+      100., 100., 100., 150., 40., 40.,
+      200,200,200,
+      40,40,40,40,40,40,40,
+      40,40,40,40,40,40,40,
+    ]
+    kd: [
+      2,2,2,4,2,2,
+      2,2,2,4,2,2,
+      5,5,5,
+      10,10,10,10,10,10,10,
+      10,10,10,10,10,10,10,
+    ]
+    ts: [0, 3]
+    qs: [
+      [],
+      [ -0.312, 0.00254, 0.00872, 0.666, -0.362, -0.00414,
+        -0.315, -0.00724, -0.00543, 0.666, -0.367, -0.00521,
+        -0.00703, 0, 0,
+        0.201, 0.203, 0.00412, 0.600, -0.00811, 0, 0,
+        0.202, -0.192, -0.00304, 0.590, 0.00192, 0, 0
+      ]
+    ]
+
+  Velocity:
+    transitions:
+      # Passive: B.on_pressed
+      Passive: Y.on_pressed
+      Mimic_Dance_102: right.on_pressed
+      Mimic_gangnanm_style: left.on_pressed
+      Pingpong: up.on_pressed
+    policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_velocity/2026-04-09_12-07-45
+    # When returning from Pingpong, give Velocity a short handoff window before
+    # its bad-orientation auto-fallback can send the robot to Passive. If the
+    # robot is truly fallen, it will still enter Passive after this grace period.
+    bad_orientation_grace_s: 0.50
+
+  Mimic_Dance_102:
+    transitions:
+      Velocity: B.on_pressed
+    fps: 40
+    # Velocity -> Mimic transition: interpolate current joints to the target
+    # npz pose at time_start before running the mimic actor.
+    switch_blend_s: 1.50
+    motion_file: ../../../source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_23dof/dance_102/G1_Take_102.bvh_60hz.npz
+    policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_mimic_dance_102/2026-04-13_16-08-36
+    time_start: 2.8
+    time_end: 35.0
+    
+  # Mimic_Dance_102:
+  #   transitions:
+  #     Velocity: B.on_pressed
+  #   fps: 30
+  #   motion_file: /home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/penguin/ourself/ou_penguin3.npz
+  #   policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_penguin/server
+  #   time_start: 0
+  #   time_end: 20.0
+
+  Mimic_gangnanm_style:
+    transitions:
+      Velocity: B.on_pressed
+    fps: 40
+    # Velocity -> Mimic transition: interpolate current joints to the target
+    # npz pose at time_start before running the mimic actor.
+    switch_blend_s: 1.50
+    motion_file: ../../../source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_23dof/gangnanm_style/G1_gangnam_style_V01.bvh_60hz.npz
+    policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_mimic_gangnanm_style/2026-04-14_11-08-40
+    time_start: 2.8
+    time_end: 35.0
+
+  Pingpong:
+    transitions:
+      Velocity: B.on_pressed
+      Passive: Y.on_pressed
+
+    # Export the policy first, so this path contains:
+    #   params/deploy.yaml
+    #   exported/policy.onnx
+    policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/2026-06-06_10-18-09_new_PD
+    policy_dt: 0.02
+
+    logging:
+      # Keep these false for normal sim2sim/sim2real runs. Turn them on only
+      # when diagnosing low-level target/gain/action issues.
+      debug_control: false
+      debug_actor: false
+      # Print one planner geometry line near impact for each live-ball command:
+      # expected hit point, current ball point, and 3D ball-minus-hit error.
+      hit_window: true
+      hit_window_s: 0.05
+      # Optional CSV trace for plotting hit-point tracking.  It is overwritten
+      # each time Pingpong enters, so it can be tailed/plotted while running.
+      hit_trace_csv:
+        enable: true
+        output: /home/woan/HumanoidProject/unitree_rl_lab/deploy/robots/g1_23dof_pingpong/logs/hit_error_trace.csv
+      # Fallback warnings are printed only when the reason changes, so the
+      # terminal stays readable while the same bad-ball condition persists.
+
+    # Velocity -> Pingpong transition: interpolate current joints to the
+    # selected pingpong ready pose. Keep this short: long open-loop blends can
+    # drift, while zero blend gives the actor a hard discontinuity.
+    # switch_blend_s: 0.45
+    switch_blend_s: 0.15
+    # switch_blend_s: 0.0
+    # 0.0 means after the entry blend the HITTER policy target is applied
+    # directly. Increase only if you explicitly want an extra first-action
+    # smoothing stage on top of the npz entry blend.
+    actor_blend_s: 0.25
+
+    motor_gains:
+      # During Velocity -> Pingpong entry interpolation, use the same HITTER
+      # deploy gains as training/export. This keeps switch_blend_s PD gains
+      # consistent with the Pingpong actor instead of borrowing Velocity gains.
+      keep_current_during_switch: false
+      # HITTER policy deploy gains are intentionally soft; arms can track with
+      # them, but real/sim2sim legs may feel weak right after entering Pingpong.
+      # This override keeps the HITTER action/obs unchanged while using
+      # Velocity/FixStand-like PD gains for support joints only.
+      support_override:
+        enable: false
+        # SDK ids: left/right legs + waist_yaw. Arms remain HITTER gains.
+        sdk_ids: [0, 6, 12, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11]
+        kp:      [100.0, 100.0, 200.0, 100.0, 100.0, 100.0, 100.0, 150.0, 150.0, 40.0, 40.0, 40.0, 40.0]
+        kd:      [2.0,   2.0,   5.0,   2.0,   2.0,   2.0,   2.0,   4.0,   4.0,   2.0,  2.0,  2.0,  2.0]
+
+    input_frame:
+      # ROS topics are allowed to arrive in your mocap table frame M:
+      #   origin: table body center / net center in the middle of the 5 cm slab
+      #   +x: robot side -> opponent side (robot is at -x)
+      #   +y: along the net, robot-left for a right-handed frame
+      #   +z: up
+      # The policy/planner internally use training world W:
+      #   table center body = (1.77, 0, 0.735), table top z = 0.76.
+      # Thus p_W = R_WM * p_M + origin_in_training_world.
+      # With this convention, table top in M is z=+0.025 and a resting ball
+      # center is z=+0.045.
+      origin_in_training_world: [1.77, 0.0, 0.735]
+      rotation_wxyz_to_training: [1.0, 0.0, 0.0, 0.0]
+
+    ros:
+      enable: true
+      # nav_msgs/Odometry in input_frame:
+      #   pose.position = ball center position
+      #   twist.twist.linear = ball center velocity
+      ball_state_topic: /pingpong/ball_state
+      # geometry_msgs/PoseStamped in input_frame:
+      #   pose.position = pelvis/root base position
+      #   pose.orientation = pelvis/root base quat (ROS xyzw fields)
+      # If this is not fresh, Pingpong keeps the HITTER actor alive with the
+      # forehand waiting command instead of disabling the HITTER actor.
+      base_pose_topic: /pingpong/base_pose
+      require_base_topic: true
+      # Use ball_state.header.stamp to compensate tracking/network latency:
+      # cmd.t_to_hit = planner_t_to_hit_from_sample - sample_age.
+      # Keep ROS clocks synchronized across machines.
+      use_header_stamp: true
+      # For real-robot virtual-ball replay from a recorded sim bag, set this
+      # true and replay the bag topic /clock. Normal mocap/live tracking should
+      # keep this false and use computer/ROS wall time.
+      use_sim_time_for_replay: false
+      # Auto record/replay are started when the FSM enters Pingpong and stopped
+      # when it exits Pingpong.
+      bag_record:
+        enable: false
+        output: /home/woan/HumanoidProject/unitree_rl_lab/deploy/robots/g1_23dof_pingpong/bags/pingpong_sim_record
+      bag_replay:
+        enable: false
+        input: /home/woan/HumanoidProject/unitree_rl_lab/deploy/robots/g1_23dof_pingpong/bags/pingpong_sim_record
+        loop: false
+        rate: 1.0
+      # The controller does not subscribe to a paddle-normal topic in real
+      # deploy. It computes right_paddle_blade local -Y by FK from pelvis quat
+      # and Unitree joint encoders.
+
+    safety:
+      # If ball/base topic age exceeds this value, Pingpong does not switch back
+      # to Velocity. It holds the previous cmd if one exists; only the first
+      # no-cmd entry case seeds a forehand npz-based initial cmd.
+      topic_timeout_s: 0.20
+      # Max allowed age of the actual ball sample after header-stamp correction.
+      max_ball_sample_age_s: 0.25
+
+    world:
+      # Pelvis/root nominal pose in training world W.  The table near edge is
+      # x = 1.77 - 2.74 / 2 = 0.40, so x=-0.138 places the pelvis about
+      # 0.538 m outside the table edge, matching the pingpong demo reach.
+      reset_root_pos: [-0.138, 0.0, 0.74]
+      reset_root_quat_wxyz: [1.0, 0.0, 0.0, 0.0]
+      # 这个table_center=[1.77, 0.0, 0.735]是仿真使用的，真实的应该使用[1.77, 0.0, 0.76]
+      table_center: [1.77, 0.0, 0.735]
+      table_size: [2.74, 1.525, 0.05]
+      table_top_z: 0.76
+      ball_radius: 0.02
+
+    planner:
+      # Replace these with the exact expert npz pair used by the deployed
+      # HITTER policy. When both paths are valid, forehand/backhand offsets,
+      # y_mid_base, and x_hit_world are derived from the npz impact frames.
+      forward_motion_file: /home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/pingpong/humanoid_data/final/expert/new_3/forward/npz/forward_001_wristfix_rotated.npz
+      backward_motion_file: /home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/pingpong/humanoid_data/final/expert/new_3/backward/npz/backward_001_rotated.npz
+      # Pose used for Velocity -> Pingpong interpolation. Defaults to
+      # forward_motion_file if omitted. Frame 48 is a post-impact forehand
+      # ready pose that tested cleaner than frame 0 from the Velocity stance.
+      entry_motion_file: /home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/pingpong/humanoid_data/final/expert/new_3/forward/npz/forward_001_wristfix_rotated.npz
+      # entry_motion_frame: 48
+      entry_motion_frame: 64
+      # full: all 23 policy joints follow the npz frame.
+      # waist_arms: only waist_yaw + both arms follow the npz frame; legs keep
+      # the current Velocity pose at the moment of switching.
+      # hitter_lower_waist_arms: legs use the HITTER policy default pose while
+      # waist_yaw + both arms follow the npz frame. This can feel like a fast
+      # crouch if Velocity legs are more upright.
+      # arms_only / hitter_lower_arms are also supported.
+      entry_joint_mode: waist_arms
+      # While no playable live-ball command exists, feed the HITTER actor a
+      # forehand waiting command. Its geometry is built from the current pelvis
+      # pose plus the forward npz frame-0 paddle offset; t_to_hit starts just
+      # below zero and decreases until it is clamped at -post_swing_time.
+      fallback_motion_file: /home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/pingpong/humanoid_data/final/expert/new_3/forward/npz/forward_001_wristfix_rotated.npz
+      fallback_motion_frame: 0
+      waiting_initial_t_to_hit: -0.02
+      forehand_y_safety_clamp: 0.40
+
+      # Fallback values used only while the npz placeholders above are not filled.
+      forehand_offset_base: [0.5496, -0.2879]
+      backhand_offset_base: [0.5250, 0.0164]
+      y_mid_base: null
+      # Virtual impact plane at the near table edge, not a distance from robot.
+      x_hit_world: 0.40
+      z_min_world: 0.85
+      z_max_world: 1.25
+      target_land_world: [2.45, 0.0, 0.78]
+      flight_time: 0.45
+      paddle_cor: 0.85
+      planner_dt: 0.01
+      planner_max_time: 1.50
+      planner_drag_k: 0.10257265376884504
+      planner_bounce_ch: 0.727005044772834
+      planner_bounce_cv: 0.9018357357260598
+      # Keep this at 0 so t_hit_abs can keep following new valid ball samples
+      # until the ball actually reaches the hit plane. The command loop is
+      # still 50 Hz via policy_dt.
+      planner_min_t_to_hit: 0.0
+      planner_max_t_to_hit: 1.20
+      # Planner robustness guards for real tracking.  There are only three cmd
+      # paths: initial forehand cmd on Pingpong entry, valid live planner cmd,
+      # and bad-ball fallback.  Bad-ball fallback keeps the previous cmd geometry
+      # and sets t_to_hit to -post_swing_time until a new valid cmd arrives.
+      min_incoming_speed_x: 0.05
+      min_ball_z_world: 0.7
+      max_table_bounces_before_fallback: 4
+      # Real deploy keeps refreshing planner targets from live ball tracking.
+      # Set to 0.0: no pre-impact spatial freeze. If live tracking drops after
+      # crossing the hit plane, C++ holds the last target but t_to_hit continues
+      # decreasing through follow-through.
+      freeze_time_before_hit: 0.0
+      post_swing_time: 0.50
+      # true: after impact, t_to_hit keeps decreasing until -post_swing_time,
+      #       preserving the post-hit imitation/recovery timing.
+      # false: once t_to_hit reaches 0, expose -post_swing_time immediately and
+      #        hold it there until a new live planner command is latched.
+      post_hit_imitation: true

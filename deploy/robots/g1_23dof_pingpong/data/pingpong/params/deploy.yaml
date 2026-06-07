@@ -1,0 +1,120 @@
+joint_ids_map: [0, 6, 12, 1, 7, 15, 22, 2, 8, 16, 23, 3, 9, 17, 24, 4, 10, 18, 25,
+  5, 11, 19, 26]
+step_dt: 0.02
+stiffness: [100.0, 100.0, 100.0, 150.0, 40.0, 40.0, 100.0, 100.0, 100.0, 150.0, 40.0,
+  40.0, 40.2, 0.0, 0.0, 14.3, 14.3, 14.3, 14.3, 14.3, 0.0, 0.0, 14.3, 14.3, 14.3,
+  14.3, 14.3]
+damping: [2.0, 2.0, 2.0, 4.0, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0, 2.0, 2.0, 2.56, 0.0, 0.0,
+  0.907, 0.907, 0.907, 0.907, 0.907, 0.0, 0.0, 0.907, 0.907, 0.907, 0.907, 0.907]
+default_joint_pos: [-0.312, -0.315, -0.00703, 0.00254, -0.00724, 0.201, 0.202, 0.00872,
+  -0.00543, 0.203, -0.192, 0.666, 0.666, 0.00412, -0.00304, -0.362, -0.367, 0.6, 0.59,
+  -0.00414, -0.00521, -0.00811, 0.00192]
+commands: {}
+actions:
+  JointPositionAction:
+    clip:
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    - [-10.0, 10.0]
+    joint_names: [.*]
+    scale: [0.22, 0.22, 0.548, 0.347, 0.347, 0.439, 0.439, 0.22, 0.22, 0.439, 0.439,
+      0.232, 0.232, 0.439, 0.439, 0.312, 0.312, 0.439, 0.439, 0.312, 0.312, 0.439,
+      0.439]
+    offset: [-0.312, -0.315, -0.00703, 0.00254, -0.00724, 0.201, 0.202, 0.00872, -0.00543,
+      0.203, -0.192, 0.666, 0.666, 0.00412, -0.00304, -0.362, -0.367, 0.6, 0.59, -0.00414,
+      -0.00521, -0.00811, 0.00192]
+    joint_ids: null
+observations:
+  base_ang_vel:
+    params:
+      inner_func: unitree_rl_lab.tasks.pingpong.mdp.observations:base_ang_vel_imu
+      inner_params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0]
+    history_length: 1
+  projected_gravity:
+    params:
+      inner_func: unitree_rl_lab.tasks.pingpong.mdp.observations:projected_gravity_imu
+      inner_params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0]
+    history_length: 1
+  base_yaw:
+    params:
+      inner_func: unitree_rl_lab.tasks.pingpong.mdp.observations:base_yaw_encoding_imu
+      inner_params: {}
+    clip: null
+    scale: [1.0, 1.0]
+    history_length: 1
+  base_err:
+    params: {command_name: pingpong, noisy: true}
+    clip: null
+    scale: [1.0, 1.0]
+    history_length: 1
+  hit_pos:
+    params: {command_name: pingpong, noisy: true}
+    clip: null
+    scale: [1.0, 1.0, 1.0]
+    history_length: 1
+  racket_vel:
+    params: {command_name: pingpong, noisy: true}
+    clip: null
+    scale: [1.0, 1.0, 1.0]
+    history_length: 1
+  t_to_hit:
+    params: {command_name: pingpong, noisy: true}
+    clip: null
+    scale: [1.0]
+    history_length: 1
+  active_face:
+    params: {command_name: pingpong, noisy: true}
+    clip: null
+    scale: [1.0, 1.0, 1.0]
+    history_length: 1
+  target_normal:
+    params: {command_name: pingpong, noisy: true}
+    clip: null
+    scale: [1.0, 1.0, 1.0]
+    history_length: 1
+  joint_pos:
+    params:
+      inner_func: isaaclab.envs.mdp.observations:joint_pos_rel
+      inner_params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1
+  joint_vel:
+    params:
+      inner_func: isaaclab.envs.mdp.observations:joint_vel_rel
+      inner_params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1
+  last_action:
+    params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1

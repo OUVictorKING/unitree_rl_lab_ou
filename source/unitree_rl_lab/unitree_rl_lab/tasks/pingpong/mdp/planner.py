@@ -916,13 +916,13 @@ class HitterPlanner:
         packet = dict(
             base_pos=base_p,
             base_quat=base_q,
-            p_hit_world=pred["hit_pos"],
+            hit_pos=pred["hit_pos"],
             t_to_hit=float(pred["t_to_hit"]),
-            v_racket_hat_world=sol["v_paddle"],
-            n_target_world=sol["paddle_normal"],
-            v_ball_in_world=pred["hit_vel"],
-            v_ball_out_world=sol["v_ball_out"],
-            target_land_world=sol["target_land"],
+            v_paddle=sol["v_paddle"],
+            paddle_normal=sol["paddle_normal"],
+            v_ball_in=pred["hit_vel"],
+            v_ball_out=sol["v_ball_out"],
+            target_land=sol["target_land"],
             n_buf=len(self._t_buf),
             plan_mode=plan_mode,
             x_hit_used=x_hit_used,
@@ -931,7 +931,7 @@ class HitterPlanner:
             bounced=pred["bounced"],
             bounces=pred["bounces"],
             traj_p=pred["traj_p"],
-            p_base_xy_world=base_target_xy,
+            base_target_xy=base_target_xy,
             swing_type=swing_type,
         )
         self._last_safe_packet = packet
@@ -1177,30 +1177,10 @@ def _run_smoke_tests() -> None:
     print(f"    counts={counts}  fresh_modes={sorted(fresh_modes)}")
     assert counts["fresh"] > 0, "expected ≥1 fresh packet on a real bounce trajectory"
     assert last_fresh_pkt is not None
-    required_cmd_keys = {
-        "p_hit_world",
-        "v_ball_in_world",
-        "v_racket_hat_world",
-        "n_target_world",
-        "v_ball_out_world",
-        "target_land_world",
-        "p_base_xy_world",
-    }
-    old_packet_keys = {
-        "hit_pos",
-        "v_paddle",
-        "paddle_normal",
-        "v_ball_in",
-        "v_ball_out",
-        "target_land",
-        "base_target_xy",
-    }
-    assert required_cmd_keys.issubset(last_fresh_pkt.keys()), last_fresh_pkt.keys()
-    assert old_packet_keys.isdisjoint(last_fresh_pkt.keys()), last_fresh_pkt.keys()
     # physical sanity on the last fresh packet
-    hp = last_fresh_pkt["p_hit_world"].cpu().numpy()
-    vp = last_fresh_pkt["v_racket_hat_world"].cpu().numpy()
-    n_pad = last_fresh_pkt["n_target_world"].cpu().numpy()
+    hp = last_fresh_pkt["hit_pos"].cpu().numpy()
+    vp = last_fresh_pkt["v_paddle"].cpu().numpy()
+    n_pad = last_fresh_pkt["paddle_normal"].cpu().numpy()
     assert 0.0 <= last_fresh_pkt["t_to_hit"] < 1.0, last_fresh_pkt["t_to_hit"]
     assert float(np.linalg.norm(vp)) < 10.0, vp
     assert abs(float(np.linalg.norm(n_pad)) - 1.0) < 1e-6, n_pad
@@ -1247,8 +1227,6 @@ def _run_smoke_tests() -> None:
             pkt = planner.update(t_j, torch.tensor(p_j), base_pos, base_quat)
             assert pkt is not None, "cache exists -> should hold, not None"
             if pkt["plan_mode"] == "held":
-                assert required_cmd_keys.issubset(pkt.keys()), pkt.keys()
-                assert old_packet_keys.isdisjoint(pkt.keys()), pkt.keys()
                 held_packets.append(pkt)
         # last 8 must be held (buffer has been flushed for several frames now)
         assert len(held_packets) >= 8, f"expected ≥8 held packets, got {len(held_packets)}"

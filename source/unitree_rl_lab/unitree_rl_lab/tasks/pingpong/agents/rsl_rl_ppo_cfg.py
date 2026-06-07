@@ -13,10 +13,10 @@ from isaaclab_rl.rsl_rl import (
 
 @configclass
 class BasePPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    # num_steps_per_env = 24
-    num_steps_per_env = 48
+    num_steps_per_env = 24
+    # num_steps_per_env = 48
     # max_iterations = 30000
-    max_iterations = 80000
+    max_iterations = 180000
     save_interval = 1000
     experiment_name = ""  # same as task name
     empirical_normalization = False

@@ -327,6 +327,18 @@ parser.add_argument(
     default=False,
     help="Run in real-time, if possible.",
 )
+parser.add_argument(
+    "--no_pingpong_error_plot",
+    action="store_true",
+    default=False,
+    help="Disable the Pingpong HITTER-REAL live error plot.",
+)
+parser.add_argument(
+    "--pingpong_error_window_s",
+    type=float,
+    default=6.0,
+    help="Time window, in seconds, shown by the Pingpong HITTER-REAL live error plot.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -371,6 +383,224 @@ from checkpoint_compat import (
     load_checkpoint_summary,
     print_actor_checkpoint_compat_report,
 )
+
+
+class PingpongPlayErrorMonitor:
+    """Live play-only diagnostics for the HITTER-REAL command tracking errors."""
+
+    def __init__(
+        self,
+        base_env,
+        task_name: str | None,
+        dt: float,
+        *,
+        enabled: bool,
+        plot_enabled: bool,
+        window_s: float,
+    ):
+        self.enabled = bool(enabled and task_name and "Pingpong-HITTER-REAL" in task_name)
+        self.dt = float(dt)
+        self.window_s = max(float(window_s), 1.0)
+        self.elapsed_s = 0.0
+        self.times: list[float] = []
+        self.pos_errors: list[float] = []
+        self.vel_errors: list[float] = []
+        self.ori_errors: list[float] = []
+        self.strike_flags: list[bool] = []
+        self.hit_samples: list[tuple[float, float, float, float, float]] = []
+        self._prev_t_to_hit: float | None = None
+        self._active_prev = False
+        self._hit_candidate: tuple[float, float, float, float, float] | None = None
+        self._hit_reported = False
+        self._swing_index = 0
+        self._plot_tick = 0
+        self._plot_enabled = False
+        self._plt = None
+
+        if not self.enabled:
+            return
+
+        try:
+            self.command = base_env.command_manager.get_term("pingpong")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[PingpongErrorMonitor] disabled: cannot get pingpong command term ({exc}).")
+            self.enabled = False
+            return
+
+        if not hasattr(self.command, "_task_errors") or not hasattr(self.command, "t_to_hit"):
+            print("[PingpongErrorMonitor] disabled: command term does not expose _task_errors/t_to_hit.")
+            self.enabled = False
+            return
+
+        self.strike_window = float(getattr(self.command.cfg, "strike_window", 0.1))
+        if plot_enabled:
+            self._init_plot()
+
+        print(
+            "[PingpongErrorMonitor] enabled: logging pos/velocity/orientation errors; "
+            f"strike_window=±{self.strike_window:.3f}s."
+        )
+
+    @staticmethod
+    def _first_float(value, default: float = 0.0) -> float:
+        if isinstance(value, torch.Tensor):
+            if value.numel() == 0:
+                return default
+            return float(value.detach().flatten()[0].cpu())
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _init_plot(self) -> None:
+        try:
+            import matplotlib.pyplot as plt
+        except Exception as exc:  # noqa: BLE001
+            print(f"[PingpongErrorMonitor] live plot disabled: matplotlib unavailable ({exc}).")
+            return
+
+        self._plt = plt
+        plt.ion()
+        self.fig, self.axes = plt.subplots(3, 1, sharex=True, num="Pingpong HITTER-REAL Errors")
+        labels = ("pos error (m)", "velocity error (m/s)", "ori error (1-cos)")
+        colors = ("tab:blue", "tab:green", "tab:purple")
+        self.error_lines = []
+        self.strike_lines = []
+        self.hit_vlines = []
+        for ax, label, color in zip(self.axes, labels, colors, strict=True):
+            line, = ax.plot([], [], color=color, linewidth=1.5)
+            strike_line, = ax.plot([], [], color="red", linewidth=2.4)
+            hit_vline = ax.axvline(0.0, color="red", linestyle="--", linewidth=1.0, alpha=0.75, visible=False)
+            ax.set_ylabel(label)
+            ax.grid(True, alpha=0.25)
+            self.error_lines.append(line)
+            self.strike_lines.append(strike_line)
+            self.hit_vlines.append(hit_vline)
+        self.axes[-1].set_xlabel("play time (s)")
+        self.fig.tight_layout()
+        self.fig.show()
+        self._plot_enabled = True
+
+    def update(self) -> None:
+        if not self.enabled:
+            return
+
+        self.elapsed_s += self.dt
+        try:
+            pos_err_t, vel_err_t, ori_err_t = self.command._task_errors()
+            t_to_hit = self._first_float(self.command.t_to_hit)
+            pos_err = self._first_float(pos_err_t)
+            vel_err = self._first_float(vel_err_t)
+            ori_err = self._first_float(ori_err_t)
+            active_value = getattr(self.command, "active_swing", None)
+            active = True if active_value is None else self._first_float(active_value) > 0.5
+        except Exception as exc:  # noqa: BLE001
+            print(f"[PingpongErrorMonitor] disabled after read failure: {exc}")
+            self.enabled = False
+            return
+
+        if not active:
+            self._reset_swing_tracking()
+            return
+
+        new_swing = (not self._active_prev) or (
+            self._prev_t_to_hit is not None and t_to_hit > self._prev_t_to_hit + 0.20
+        )
+        if new_swing:
+            self._swing_index += 1
+            self._hit_candidate = None
+            self._hit_reported = False
+
+        in_strike = abs(t_to_hit) <= self.strike_window
+        self.times.append(self.elapsed_s)
+        self.pos_errors.append(pos_err)
+        self.vel_errors.append(vel_err)
+        self.ori_errors.append(ori_err)
+        self.strike_flags.append(in_strike)
+        self._trim_history()
+
+        sample = (self.elapsed_s, t_to_hit, pos_err, vel_err, ori_err)
+        if self._hit_candidate is None or abs(t_to_hit) < abs(self._hit_candidate[1]):
+            self._hit_candidate = sample
+
+        crossed_hit = self._prev_t_to_hit is not None and self._prev_t_to_hit > 0.0 >= t_to_hit
+        expired_hit = t_to_hit < -self.strike_window
+        if (crossed_hit or expired_hit) and not self._hit_reported:
+            self._record_hit_sample()
+
+        self._active_prev = True
+        self._prev_t_to_hit = t_to_hit
+        self._refresh_plot()
+
+    def _reset_swing_tracking(self) -> None:
+        self._active_prev = False
+        self._prev_t_to_hit = None
+        self._hit_candidate = None
+        self._hit_reported = False
+
+    def _trim_history(self) -> None:
+        cutoff = self.elapsed_s - self.window_s
+        while self.times and self.times[0] < cutoff:
+            self.times.pop(0)
+            self.pos_errors.pop(0)
+            self.vel_errors.pop(0)
+            self.ori_errors.pop(0)
+            self.strike_flags.pop(0)
+        while self.hit_samples and self.hit_samples[0][0] < cutoff:
+            self.hit_samples.pop(0)
+
+    def _record_hit_sample(self) -> None:
+        if self._hit_candidate is None:
+            return
+        self._hit_reported = True
+        self.hit_samples.append(self._hit_candidate)
+        t_abs, t_to_hit, pos_err, vel_err, ori_err = self._hit_candidate
+        print(
+            "[PingpongHitError] "
+            f"swing={self._swing_index} time={t_abs:.3f}s t_to_hit={t_to_hit:+.4f}s "
+            f"pos={pos_err:.4f}m vel={vel_err:.4f}m/s ori={ori_err:.4f}"
+        )
+
+    def _refresh_plot(self) -> None:
+        if not self._plot_enabled:
+            return
+        self._plot_tick += 1
+        if self._plot_tick % 5 != 0:
+            return
+        if not self.times:
+            return
+        if not self._plt.fignum_exists(self.fig.number):
+            self._plot_enabled = False
+            return
+
+        series = (self.pos_errors, self.vel_errors, self.ori_errors)
+        latest_hit = self.hit_samples[-1] if self.hit_samples else None
+        for index, (line, strike_line, values) in enumerate(zip(self.error_lines, self.strike_lines, series, strict=True)):
+            strike_values = [value if flag else float("nan") for value, flag in zip(values, self.strike_flags, strict=True)]
+            line.set_data(self.times, values)
+            strike_line.set_data(self.times, strike_values)
+            ax = self.axes[index]
+            ax.relim()
+            ax.autoscale_view(scalex=False, scaley=True)
+
+        x_min = max(0.0, self.elapsed_s - self.window_s)
+        x_max = max(self.window_s, self.elapsed_s + 0.10)
+        for ax, hit_line in zip(self.axes, self.hit_vlines, strict=True):
+            ax.set_xlim(x_min, x_max)
+            if latest_hit is not None and latest_hit[0] >= x_min:
+                hit_line.set_xdata([latest_hit[0], latest_hit[0]])
+                hit_line.set_visible(True)
+            else:
+                hit_line.set_visible(False)
+
+        if latest_hit is not None:
+            _, t_to_hit, pos_err, vel_err, ori_err = latest_hit
+            self.axes[0].set_title(f"latest hit-frame pos error: {pos_err:.4f} m (t_to_hit={t_to_hit:+.4f}s)")
+            self.axes[1].set_title(f"latest hit-frame velocity error: {vel_err:.4f} m/s")
+            self.axes[2].set_title(f"latest hit-frame ori error: {ori_err:.4f}")
+
+        self.fig.canvas.draw_idle()
+        self._plt.pause(0.001)
 
 
 def main():
@@ -535,6 +765,14 @@ def main():
     # )
 
     dt = env.unwrapped.step_dt
+    pingpong_error_monitor = PingpongPlayErrorMonitor(
+        env.unwrapped,
+        args_cli.task,
+        dt,
+        enabled=not args_cli.no_pingpong_error_plot,
+        plot_enabled=not getattr(args_cli, "headless", False),
+        window_s=args_cli.pingpong_error_window_s,
+    )
 
     # reset environment
     obs = env.get_observations()
@@ -550,6 +788,7 @@ def main():
             actions = policy(obs)
             # env stepping
             obs, _, _, _ = env.step(actions)
+            pingpong_error_monitor.update()
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video

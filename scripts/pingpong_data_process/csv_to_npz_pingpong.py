@@ -36,7 +36,7 @@ from isaaclab.app import AppLauncher
 
 # add argparse arguments
 parser = argparse.ArgumentParser(
-    description="Batch replay GMR-29DoF CSVs (with header) and emit 23DoF NPZs."
+    description="Batch replay GMR CSVs (with header) and emit 23/29-DoF NPZs."
 )
 parser.add_argument("--input",  "-i", required=True, type=str,
                     help="Directory containing *.csv files produced by GMR gvhmr_to_robot.py.")
@@ -54,16 +54,20 @@ parser.add_argument("--stop_on_error", action="store_true",
 parser.add_argument("--overwrite", action="store_true",
                     help="Re-convert files even if the destination NPZ already exists.")
 parser.add_argument("--paddle", action="store_true",
-                    help="Spawn the robot with the paddle URDF (g1_23dof_rev_1_0_paddle.urdf), "
-                         "so body_pos_w / body_quat_w / body_*_vel_w include the "
-                         "right_paddle_blade body as the last index. The joint count stays 23 "
-                         "(blade is fixed-joint).")
+                    help="Spawn the robot with the paddle URDF (g1_{23,29}dof_rev_1_0_paddle.urdf "
+                         "depending on --dof29), so body_pos_w / body_quat_w / body_*_vel_w "
+                         "include the right_paddle_blade body as the last index. The joint count "
+                         "is unchanged (blade is fixed-joint).")
 parser.add_argument("--task_name", type=str, default=None,
                     choices=["forward_hand", "backward_hand"],
                     help="Pingpong task name. Maps to swing_type in the npz: "
                          "forward_hand→0 (forehand), backward_hand→1 (backhand). "
                          "If omitted, swing_type is not written and you'll need to patch "
                          "the npz later with update_npz_metadata.py.")
+parser.add_argument("--dof29", action="store_true",
+                    help="Use the 29-DoF robot (g1_29dof_rev_1_0[_paddle].urdf) instead of "
+                         "the 23-DoF default. Input CSV must have 29 DoF columns "
+                         "(GMR --robot unitree_g1).")
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -156,10 +160,23 @@ from isaaclab.utils.math import (
 from unitree_rl_lab.assets.robots.unitree import (
     UNITREE_G1_23DOF_CFG,
     UNITREE_G1_23DOF_PADDLE_CFG,
+    UNITREE_G1_29DOF_CFG,
+    UNITREE_G1_29DOF_PADDLE_CFG,
 )
 
-ROBOT_CFG = UNITREE_G1_23DOF_PADDLE_CFG if args_cli.paddle else UNITREE_G1_23DOF_CFG
+if args_cli.dof29:
+    ROBOT_CFG = UNITREE_G1_29DOF_PADDLE_CFG if args_cli.paddle else UNITREE_G1_29DOF_CFG
+    EXPECTED_DOF = 29
+    WRIST_BODY_NAME = "right_rubber_hand"
+    PADDLE_URDF_PATH = UNITREE_G1_29DOF_PADDLE_CFG.spawn.asset_path
+else:
+    ROBOT_CFG = UNITREE_G1_23DOF_PADDLE_CFG if args_cli.paddle else UNITREE_G1_23DOF_CFG
+    EXPECTED_DOF = 23
+    WRIST_BODY_NAME = "right_wrist_roll_rubber_hand"
+    PADDLE_URDF_PATH = UNITREE_G1_23DOF_PADDLE_CFG.spawn.asset_path
 print(f"[INFO] robot URDF : {ROBOT_CFG.spawn.asset_path}")
+print(f"[INFO] DoF        : {EXPECTED_DOF}")
+print(f"[INFO] wrist body : {WRIST_BODY_NAME}")
 
 
 @configclass
@@ -206,11 +223,13 @@ class MotionLoader:
         motion = motion.to(torch.float32).to(self.device)
         self.motion_base_poss_input = motion[:, :3]
         self.motion_base_rots_input = motion[:, 3:7][:, [3, 0, 1, 2]]  # xyzw -> wxyz
-        # GMR with `unitree_g1_23dof` already outputs the 23-DoF order expected by
-        # the deploy URDF: legs(12) + waist_yaw(1) + left arm 5 + right arm 5.
+        # GMR with `unitree_g1_23dof` outputs the 23-DoF order expected by the
+        # 23-DoF deploy URDF (legs 12 + waist_yaw 1 + arms 10); GMR with
+        # `unitree_g1` outputs the 29-DoF order (legs 12 + waist 3 + arms 14).
         self.motion_dof_poss_input = motion[:, 7:]
-        assert self.motion_dof_poss_input.shape[1] == 23, (
-            f"expected 23 DoF columns from GMR (use --robot unitree_g1_23dof), "
+        assert self.motion_dof_poss_input.shape[1] == EXPECTED_DOF, (
+            f"expected {EXPECTED_DOF} DoF columns from GMR "
+            f"(use --robot {'unitree_g1' if EXPECTED_DOF == 29 else 'unitree_g1_23dof'}), "
             f"got {self.motion_dof_poss_input.shape[1]}"
         )
 
@@ -338,7 +357,7 @@ def _parse_paddle_blade_joint_origin(urdf_path: str) -> tuple[np.ndarray, np.nda
 
 
 PADDLE_OFFSET_LOCAL, PADDLE_QUAT_LOCAL = _parse_paddle_blade_joint_origin(
-    UNITREE_G1_23DOF_PADDLE_CFG.spawn.asset_path
+    PADDLE_URDF_PATH
 )
 
 
@@ -466,7 +485,7 @@ def convert_one_csv(
             ):
                 log[k] = np.stack(log[k], axis=0)
 
-            if args_cli.paddle:
+            if args_cli.paddle and "right_paddle_blade" not in body_names:
                 if wrist_body_idx is None:
                     raise RuntimeError(
                         "wrist body index unavailable; cannot synthesize paddle blade"
@@ -507,15 +526,19 @@ def run_simulator(
 
     wrist_body_idx: int | None = None
     if args_cli.paddle:
-        wrist_ids, wrist_names = robot.find_bodies(["right_wrist_roll_rubber_hand"])
+        wrist_ids, wrist_names = robot.find_bodies([WRIST_BODY_NAME])
         if not wrist_ids:
             raise RuntimeError(
-                "right_wrist_roll_rubber_hand body not found in articulation; "
+                f"{WRIST_BODY_NAME} body not found in articulation; "
                 "paddle URDF expected"
             )
         wrist_body_idx = int(wrist_ids[0])
         print(f"[INFO] wrist body : index={wrist_body_idx} name={wrist_names[0]}")
-        body_names.append("right_paddle_blade")
+        if "right_paddle_blade" not in body_names:
+            body_names.append("right_paddle_blade")
+            print("[INFO] paddle blade  : synthesized (URDF lacks blade link)")
+        else:
+            print("[INFO] paddle blade  : present in URDF, skipping synthesis")
 
     print(f"[INFO] body_names ({len(body_names)}): {body_names}")
     if args_cli.task_name is not None:

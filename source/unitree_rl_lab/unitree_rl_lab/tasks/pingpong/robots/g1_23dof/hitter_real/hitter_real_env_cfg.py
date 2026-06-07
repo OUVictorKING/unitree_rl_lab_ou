@@ -107,8 +107,8 @@ class RealRobotSceneCfg(HitterRobotSceneCfg):
         debug_vis=False,
     )
     ball_robot_contact = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/.*",
-        filter_prim_paths_expr=["{ENV_REGEX_NS}/Ball"],
+        prim_path="{ENV_REGEX_NS}/Ball",
+        filter_prim_paths_expr=["{ENV_REGEX_NS}/Robot/.*"],
         history_length=3,
         force_threshold=0.05,
         debug_vis=False,
@@ -151,6 +151,11 @@ class ObservationsCfg:
         hit_pos = ObsTerm(func=mdp.pingpong_hit_position_b, params={"command_name": "pingpong", "noisy": True})
         racket_vel = ObsTerm(func=mdp.pingpong_racket_velocity_w, params={"command_name": "pingpong", "noisy": True})
         t_to_hit = ObsTerm(func=mdp.pingpong_t_to_hit, params={"command_name": "pingpong", "noisy": True})
+        # Aligned with the HITTER training task (obs are kept identical so a
+        # HITTER-trained actor loads here). active_face/target_normal = signed
+        # paddle-face normal vs desired target normal, both in base frame.
+        active_face = ObsTerm(func=mdp.pingpong_active_face_b, params={"command_name": "pingpong", "noisy": True})
+        target_normal = ObsTerm(func=mdp.pingpong_target_normal_b, params={"command_name": "pingpong", "noisy": True})
         joint_pos = ObsTerm(
             func=mdp.DelayedObservation,
             params={"inner_func": mdp.joint_pos_rel, "inner_params": {}},
@@ -174,6 +179,9 @@ class ObservationsCfg:
         hit_pos = ObsTerm(func=mdp.pingpong_hit_position_b, params={"command_name": "pingpong", "noisy": False})
         racket_vel = ObsTerm(func=mdp.pingpong_racket_velocity_w, params={"command_name": "pingpong", "noisy": False})
         t_to_hit = ObsTerm(func=mdp.pingpong_t_to_hit, params={"command_name": "pingpong", "noisy": False})
+        # Aligned with the HITTER training task critic (noiseless).
+        active_face = ObsTerm(func=mdp.pingpong_active_face_b, params={"command_name": "pingpong", "noisy": False})
+        target_normal = ObsTerm(func=mdp.pingpong_target_normal_b, params={"command_name": "pingpong", "noisy": False})
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         last_action = ObsTerm(func=mdp.last_action)
@@ -236,18 +244,19 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         self.scene.num_envs = 1
         self.scene.env_spacing = 4.0
         self.commands.pingpong.debug_vis = True
-        self.commands.pingpong.post_outcome_hold_time = 1.5
-        self.commands.pingpong.ball_dead_z = -5.0
-        self.commands.pingpong.ball_dead_y_abs = 8.0
-        self.commands.pingpong.ball_dead_x_abs = 8.0
-        self.commands.pingpong.debug_ball_traj_len = 160
-        self.commands.pingpong.debug_show_aux_targets = True
-        self.commands.pingpong.debug_show_vectors = False
-        self.commands.pingpong.debug_show_current_ball_marker = False
-        self.commands.pingpong.debug_show_net_points = False
-        self.commands.pingpong.debug_show_blade_traj = False
-        self.commands.pingpong.debug_show_planner_traj = False
-        self.commands.pingpong.debug_show_ball_traj = True
-        self.commands.pingpong.debug_show_landing_points = True
-        self.commands.pingpong.debug_show_direction_arrows = True
         self.curriculum.pingpong = None
+        # ── PLAY-ONLY viz/observation tweaks (training cfg untouched) ──
+        # hold the stale cmd 1.5s after a swing outcome so the post-strike motion is
+        # viewable (this is the OOD post-swing window — viewing only, never trained).
+        self.commands.pingpong.post_outcome_hold_time = 1.5
+        # shorter debug trails so the scene isn't cluttered
+        self.commands.pingpong.debug_ball_traj_len = 24
+        self.commands.pingpong.debug_planner_traj_len = 24
+        # widen ball-dead so the full return flight is visible before the ball is killed
+        self.commands.pingpong.ball_dead_z = 0.0
+        self.commands.pingpong.ball_dead_y_abs = 4.0
+        self.commands.pingpong.ball_dead_x_abs = 5.0
+        # fix the table sinking below ground in play (the staged reset_table event
+        # drops it during stand-up; not wanted when just watching the policy hit)
+        if hasattr(self.events, "reset_table"):
+            self.events.reset_table = None

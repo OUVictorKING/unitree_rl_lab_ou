@@ -411,16 +411,6 @@ UNITREE_G1_23DOF_CFG = UnitreeArticulationCfg(
     ],
 )
 
-# Same as UNITREE_G1_23DOF_CFG but spawned from the paddle URDF — adds a
-# `right_paddle_blade` body via fixed joint on the right wrist. Joint count and
-# actuator wiring are unchanged (paddle is a fixed link). Used by the ping-pong
-# pipeline so motion-tracking npz / training observe the blade pose directly.
-UNITREE_G1_23DOF_PADDLE_CFG = copy.deepcopy(UNITREE_G1_23DOF_CFG)
-UNITREE_G1_23DOF_PADDLE_CFG.spawn.asset_path = (
-    f"{UNITREE_ROS_DIR}/robots/g1_description/g1_23dof_rev_1_0_paddle.urdf"
-)
-UNITREE_G1_23DOF_PADDLE_CFG.spawn.merge_fixed_joints = False
-
 UNITREE_G1_29DOF_CFG = UnitreeArticulationCfg(
     spawn=UnitreeUrdfFileCfg(
         asset_path=f"{UNITREE_ROS_DIR}/robots/g1_description/g1_29dof_rev_1_0.urdf",
@@ -928,9 +918,6 @@ UNITREE_G1_23DOF_MIMIC_CFG = UnitreeArticulationCfg(
     ],
 )
 
-
-# 选取：action_scale[joint] = 0.25 * effort_limit[joint] / stiffness[joint]，当mimic的动作幅度大，小scale可能就成为了限制，让机器人无法跟踪上高速动作。
-# 也就是 action_scale ≈ 25% × 最大可承受位置误差
 UNITREE_G1_23DOF_MIMIC_ACTION_SCALE = {}
 for a in UNITREE_G1_23DOF_MIMIC_CFG.actuators.values():
     e = a.effort_limit_sim
@@ -955,6 +942,44 @@ UNITREE_G1_23DOF_PADDLE_MIMIC_CFG.spawn.asset_path = (
 )
 UNITREE_G1_23DOF_PADDLE_MIMIC_CFG.spawn.merge_fixed_joints = False
 
+# ── Big-PD override for the pingpong HITTER (sim2real leg-jitter fix) ──────────
+# The MIMIC base gains are SOFT (legs kp 40-99, arms kp ~14). Soft legs jitter on
+# the real robot (soft gains + actuation latency + sensor noise), while sim2sim is
+# fine. Override only the PADDLE_MIMIC LEGS+feet to the velocity/locomotion STIFF
+# set (the same gains whose locomotion sim2real gap was small) for stable support;
+# the ARMS and WAIST_YAW are kept SOFT (stiffening them over-damps the swing /
+# over-constrains the 扭腰 → vel_fail + worse face, see below). Set BEFORE the action-scale
+# loop below so 0.25*effort/stiffness recomputes from these gains. The mimic-dance
+# configs are NOT affected (they keep UNITREE_G1_23DOF_MIMIC_CFG's soft gains).
+# NOTE: requires RETRAINING — the policy must be trained with these gains; you can't
+# just deploy stiffer gains on a soft-gain policy (train/deploy dynamics mismatch).
+_pad = UNITREE_G1_23DOF_PADDLE_MIMIC_CFG.actuators
+_pad["legs"].stiffness = {
+    ".*_hip_pitch_joint": 100.0,
+    ".*_hip_roll_joint": 100.0,
+    ".*_hip_yaw_joint": 100.0,
+    ".*_knee_joint": 150.0,
+}
+_pad["legs"].damping = {
+    ".*_hip_pitch_joint": 2.0,
+    ".*_hip_roll_joint": 2.0,
+    ".*_hip_yaw_joint": 2.0,
+    ".*_knee_joint": 4.0,
+}
+_pad["feet"].stiffness = 40.0
+_pad["feet"].damping = 2.0
+# Waist_yaw: KEEP the soft MIMIC gain (≈40.2 / 2.56) — NOT stiffened. It's a swing/
+# face joint (waist twist 扭腰 sets the paddle face + adds swing power), so a stiff
+# waist (kp 200) over-constrains it; kept compliant like the arms.
+# Arms: KEEP the soft MIMIC gains (STIFFNESS_5020≈14.25 / DAMPING_5020≈0.907) — i.e.
+# do NOT override them. Stiffening the arms (kp 80 / kd 3) was tried (run
+# 2026-06-05_20-37-36_new_PD) and BACKFIRED: the higher kd over-damped the swing —
+# max joint vel ≈ effort/kd fell from ~28 to ~8 rad/s, so the paddle couldn't reach
+# v_racket_hat and vel_fail jumped 0.08→0.46 (hsr 0.67→0.44) at matched stage. The
+# fast pingpong swing needs LOW arm damping; the soft arms already tracked face +
+# velocity well (ori_fail ~0.02). Only the LEGS needed stiffening (the real-robot
+# jitter source), so the arms stay at the deepcopied soft values.
+
 
 UNITREE_G1_23DOF_PADDLE_MIMIC_ACTION_SCALE = {}
 for a in UNITREE_G1_23DOF_PADDLE_MIMIC_CFG.actuators.values():
@@ -968,3 +993,105 @@ for a in UNITREE_G1_23DOF_PADDLE_MIMIC_CFG.actuators.values():
     for n in names:
         if n in e and n in s and s[n]:
             UNITREE_G1_23DOF_PADDLE_MIMIC_ACTION_SCALE[n] = 0.25 * e[n] / s[n]
+
+
+# ── Low-kd leg variant of PADDLE_MIMIC (A/B: SAME stiff kp, HALVED leg damping) ──
+# Identical to UNITREE_G1_23DOF_PADDLE_MIMIC_CFG (stiff legs kp 100/100/150/40, soft
+# waist+arms) EXCEPT the leg+feet DAMPING is halved: hip/hip_yaw/hip_roll kd 2→1,
+# knee kd 4→2, ankle(feet) kd 2→1. kp UNCHANGED. Lower kd = more responsive (less
+# over-damped) legs + less amplification of real-robot joint-velocity noise, but
+# more under-damped → watch for oscillation/jitter. action_scale is IDENTICAL (it is
+# 0.25*effort/stiffness → depends only on kp, which is unchanged), aliased below.
+# To TRAIN this variant: in the task env_cfg, import this name as ROBOT_CFG (the
+# action-scale import stays UNITREE_G1_23DOF_PADDLE_MIMIC_ACTION_SCALE).
+UNITREE_G1_23DOF_PADDLE_MIMIC_CFG_low_PD = copy.deepcopy(
+    UNITREE_G1_23DOF_PADDLE_MIMIC_CFG
+)
+_low = UNITREE_G1_23DOF_PADDLE_MIMIC_CFG_low_PD.actuators
+_low["legs"].damping = {
+    ".*_hip_pitch_joint": 1.0,
+    ".*_hip_roll_joint": 1.0,
+    ".*_hip_yaw_joint": 1.0,
+    ".*_knee_joint": 2.0,
+}
+_low["feet"].damping = 1.0
+UNITREE_G1_23DOF_PADDLE_MIMIC_low_PD_ACTION_SCALE = (
+    UNITREE_G1_23DOF_PADDLE_MIMIC_ACTION_SCALE
+)
+
+
+# 29-dof paddle variant — controls for mechanical reach in pingpong HITTER. Same
+# spawn pattern as 23dof paddle but starts from the 29-dof mimic cfg, so it has
+# the full 7-DOF arms instead of the 23-dof's 5-DOF wrist chain.
+UNITREE_G1_29DOF_PADDLE_MIMIC_CFG = copy.deepcopy(UNITREE_G1_29DOF_MIMIC_CFG)
+UNITREE_G1_29DOF_PADDLE_MIMIC_CFG.spawn.asset_path = (
+    f"{UNITREE_ROS_DIR}/robots/g1_description/g1_29dof_rev_1_0_paddle.urdf"
+)
+UNITREE_G1_29DOF_PADDLE_MIMIC_CFG.spawn.merge_fixed_joints = False
+# 29dof has 8 extra intermediate links (waist_yaw/roll, wrist_roll/pitch/yaw ×2)
+# whose default collision meshes overlap with their parents. With self-collision on,
+# this fires hard_contact at step 0 (EpLen=1 collapse). 23dof's chain is shorter and
+# does not have this issue.
+UNITREE_G1_29DOF_PADDLE_MIMIC_CFG.spawn.articulation_props.enabled_self_collisions = (
+    False
+)
+
+# Override default_joint_pos to match clip frame 0 ready-stance for paddle hitting.
+# UNITREE_G1_29DOF_MIMIC_CFG (locomotion lineage) uses a symmetric squat
+# (knee=0.669, hip_pitch=-0.312) but pingpong RSI starts the robot at the clip's
+# side-stance (right leg back, left leg forward, knees half-bent ~0.4). With the
+# squat default, JointPositionAction(use_default_offset=True) drives PD targets
+# back toward the squat at step 0, applying 25-30 N·m torques on knees/hips while
+# the upper body has its own 30+ deg deltas (left_elbow, shoulder_yaw) — robot
+# crumples within 28 sim steps regardless of bad_orientation tolerance
+# (run 2026-05-28_16-19-43, bad_orientation 99.96% even with limit_angle=1.2rad).
+# Values are forward_003_rotated.npz frame 0 joint_pos in IsaacLab DFS joint
+# order. Backward swings have ~17deg RMS residual but legs match within 13deg
+# (forward is more common and arm impulses don't tip the pelvis). Other tasks
+# inherit UNITREE_G1_29DOF_MIMIC_CFG with the original squat default — only
+# paddle hitting is affected.
+UNITREE_G1_29DOF_PADDLE_MIMIC_CFG.init_state.joint_pos = {
+    "left_hip_pitch_joint": -0.086,
+    "right_hip_pitch_joint": -0.166,
+    "left_hip_roll_joint": 0.186,
+    "right_hip_roll_joint": -0.356,
+    "left_hip_yaw_joint": 0.069,
+    "right_hip_yaw_joint": -0.098,
+    "left_knee_joint": 0.407,
+    "right_knee_joint": 0.372,
+    "left_ankle_pitch_joint": -0.451,
+    "right_ankle_pitch_joint": -0.361,
+    "left_ankle_roll_joint": 0.0,
+    "right_ankle_roll_joint": 0.164,
+    "waist_yaw_joint": -0.025,
+    "waist_roll_joint": 0.010,
+    "waist_pitch_joint": 0.098,
+    "left_shoulder_pitch_joint": 0.289,
+    "right_shoulder_pitch_joint": 0.200,
+    "left_shoulder_roll_joint": 0.428,
+    "right_shoulder_roll_joint": -0.442,
+    "left_shoulder_yaw_joint": -0.067,
+    "right_shoulder_yaw_joint": -0.154,
+    "left_elbow_joint": 0.034,
+    "right_elbow_joint": 0.441,
+    "left_wrist_roll_joint": -0.124,
+    "right_wrist_roll_joint": 0.009,
+    "left_wrist_pitch_joint": -0.124,
+    "right_wrist_pitch_joint": 0.006,
+    "left_wrist_yaw_joint": 0.077,
+    "right_wrist_yaw_joint": -0.084,
+}
+
+
+UNITREE_G1_29DOF_PADDLE_MIMIC_ACTION_SCALE = {}
+for a in UNITREE_G1_29DOF_PADDLE_MIMIC_CFG.actuators.values():
+    e = a.effort_limit_sim
+    s = a.stiffness
+    names = a.joint_names_expr
+    if not isinstance(e, dict):
+        e = {n: e for n in names}
+    if not isinstance(s, dict):
+        s = {n: s for n in names}
+    for n in names:
+        if n in e and n in s and s[n]:
+            UNITREE_G1_29DOF_PADDLE_MIMIC_ACTION_SCALE[n] = 0.25 * e[n] / s[n]

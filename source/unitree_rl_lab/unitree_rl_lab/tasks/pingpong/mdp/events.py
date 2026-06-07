@@ -21,11 +21,19 @@ __all__ = [
     "randomize_comm_delay",
     "get_imu_offset_quat",
     "get_obs_delay_steps",
+    "reset_table_position_by_stage",
 ]
 
 
 _IMU_OFFSET_ATTR = "_pingpong_imu_offset_quat"
 _OBS_DELAY_ATTR = "_pingpong_obs_delay_steps"
+
+# Table-curriculum positions. Hidden = sunk 10m below ground (still exists,
+# but cannot collide with the robot or be used as mechanical balance support).
+# Active = paper position above the robot.
+_TABLE_POS_HIDDEN = (1.77, 0.0, -10.0)
+_TABLE_POS_ACTIVE = (1.77, 0.0, 0.735)
+_TABLE_QUAT = (1.0, 0.0, 0.0, 0.0)
 
 
 def get_imu_offset_quat(env: "ManagerBasedEnv", asset_name: str = "robot") -> torch.Tensor:
@@ -101,3 +109,43 @@ def randomize_comm_delay(
 
     high = max(0, int(max_delay_steps)) + 1
     d_buf[env_ids] = torch.randint(0, high, (int(len(env_ids)),), device=device, dtype=torch.long)
+
+
+def reset_table_position_by_stage(
+    env: "ManagerBasedEnv",
+    env_ids: torch.Tensor | None,
+    asset_name: str = "table",
+) -> None:
+    """Place the table at HIDDEN (z=-10) or ACTIVE (z=0.735) per curriculum stage.
+
+    Reads ``env._pingpong_table_active`` (bool, default False). When False, the
+    table is teleported below ground so it cannot collide or be used as a
+    mechanical-balance support during the stand-up + swing-learning phase.
+    When the table-guard curriculum sets the flag True, subsequent resets place
+    the table at its paper position so collision-avoidance learning can begin.
+
+    Pose write semantics: each env's table prim lives under {ENV_REGEX_NS}/Table,
+    so we must add the env-origin offset to the local target position before
+    calling write_root_pose_to_sim (which expects sim/world frame).
+    """
+    asset = env.scene[asset_name]
+    device = env.device
+
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=device)
+    elif not isinstance(env_ids, torch.Tensor):
+        env_ids = torch.as_tensor(env_ids, device=device, dtype=torch.long)
+
+    n = int(env_ids.numel())
+    if n == 0:
+        return
+
+    table_active = bool(getattr(env, "_pingpong_table_active", False))
+    target_local = _TABLE_POS_ACTIVE if table_active else _TABLE_POS_HIDDEN
+
+    pos_local = torch.tensor(target_local, device=device, dtype=torch.float32).expand(n, 3)
+    pos_w = pos_local + env.scene.env_origins[env_ids]
+    quat = torch.tensor(_TABLE_QUAT, device=device, dtype=torch.float32).expand(n, 4)
+    pose_w = torch.cat((pos_w, quat), dim=-1).contiguous()
+
+    asset.write_root_pose_to_sim(pose_w, env_ids=env_ids)

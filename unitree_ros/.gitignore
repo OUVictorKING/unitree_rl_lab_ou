@@ -1,0 +1,20 @@
+.vscode/
+robots/a1_description/.vscode/
+unitree_controller/check_tau.py
+unitree_guide/.VSCodeCounter/
+unitree_guide/
+*usd
+
+# Training artifacts
+checkpoints/
+models/
+runs/
+logs/
+tensorboard/
+wandb/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.tflite
+*.pb

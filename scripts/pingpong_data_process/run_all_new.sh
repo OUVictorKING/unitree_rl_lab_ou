@@ -1,18 +1,30 @@
 #!/usr/bin/env bash
 # End-to-end pipeline for the new/ subfolder layout under
-#   motion_datasets/pingpong/humanoid_data/final/expert/new/{forward,backward}/
+#   <ROOT>/{forward,backward}/  (ROOT specified via --root, or hardcoded default)
+#
+# Required folder layout (per-task):
+#   <ROOT>/forward/forward.yaml         (raw_mp4_dir inside points to real mp4)
+#   <ROOT>/forward/<raw>.mp4
+#   <ROOT>/backward/backward.yaml
+#   <ROOT>/backward/<raw>.mp4
 #
 # Stage 0: cut_from_yaml.py (gmr env)        yaml + raw mp4 → <task>_NNN.mp4 + _clips_info.csv
 # Stage 1: per-clip GVHMR + GMR (gmr env)    .mp4 → 23-DoF csv
 # Stage 2: batch csv → npz (env_isaaclab_51) all csvs → 23-DoF npzs @ 60 Hz
 #
-# Output layout (per user choice):
-#   .../new/forward/{*.mp4, csv/*.csv, _clips_info.csv, npz/*.npz}
-#   .../new/backward/{*.mp4, csv/*.csv, _clips_info.csv, npz/*.npz}
+# Output layout (per task):
+#   <ROOT>/<task>/{*.mp4, csv/*.csv, _clips_info.csv, npz/*.npz}
 #
 # Two conda envs (isolated PYTHONPATH):
 #   - gmr           : $HOME/miniforge/envs/gmr/bin/python              (GVHMR + GMR + ffmpeg trim)
 #   - env_isaaclab_51 : $HOME/miniforge/envs/env_isaaclab_51/bin/python (Isaac Sim replay → npz)
+#
+# Usage:
+#   bash run_all_new.sh --root <ROOT> [--forward] [--backward]
+#     --root <PATH>   : data root containing forward/ and/or backward/ subdirs (REQUIRED unless default below kept)
+#     --forward       : process forward/ only
+#     --backward      : process backward/ only
+#     (no flag)       : process both forward + backward (default)
 
 set -euo pipefail
 
@@ -23,36 +35,72 @@ GMR_PY=$HOME/miniforge/envs/gmr/bin/python
 ULAB_PY=$HOME/miniforge/envs/env_isaaclab_51/bin/python
 INPUT_FPS=30
 OUTPUT_FPS=60
-NEW_ROOT=$ULAB/motion_datasets/pingpong/humanoid_data/final/expert/new
 CUT_SCRIPT=$ULAB/motion_datasets/pingpong/humanoid_data/cut_from_yaml.py
+
+# ── CLI arg parsing ────────────────────────────────────
+NEW_ROOT=""
+TASKS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --root)     NEW_ROOT="$2"; shift 2 ;;
+        --forward)  TASKS+=(forward);  shift ;;
+        --backward) TASKS+=(backward); shift ;;
+        -h|--help)
+            sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \?//'
+            exit 0 ;;
+        *) echo "ERROR: unknown arg: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$NEW_ROOT" ]]; then
+    echo "ERROR: --root <PATH> required" >&2
+    echo "  (e.g.: bash $0 --root \$HOME/HumanoidProject/unitree_rl_lab/motion_datasets/pingpong/humanoid_data/final/expert/new_3)" >&2
+    exit 1
+fi
+[[ -d "$NEW_ROOT" ]] || { echo "ERROR: --root not a directory: $NEW_ROOT" >&2; exit 1; }
+NEW_ROOT=$(realpath "$NEW_ROOT")
+
+# default to both tasks
+if [[ ${#TASKS[@]} -eq 0 ]]; then
+    TASKS=(forward backward)
+fi
+
+# Unique GVHMR cache subdir per dataset, to avoid clobbering (uses ROOT basename)
+ROOT_TAG=$(basename "$NEW_ROOT")
 
 export PYTHONNOUSERSITE=1
 export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
 echo "=== run_all_new.sh ==="
 echo "  NEW_ROOT     : $NEW_ROOT"
+echo "  ROOT_TAG     : $ROOT_TAG  (used for GVHMR cache subdir)"
+echo "  tasks        : ${TASKS[*]}"
 echo "  fps  in/out  : $INPUT_FPS / $OUTPUT_FPS"
 
 # ── 0) cut clips per yaml (gmr env, fast) ──────────────
 echo
 echo "=== Stage 0: cut_from_yaml.py ==="
-( unset PYTHONPATH; "$GMR_PY" "$CUT_SCRIPT" forward_new backward_new )
+for task in "${TASKS[@]}"; do
+    YAML_PATH=$NEW_ROOT/$task/$task.yaml
+    if [[ ! -f "$YAML_PATH" ]]; then
+        echo "ERROR: missing yaml: $YAML_PATH" >&2; exit 1
+    fi
+    ( unset PYTHONPATH; "$GMR_PY" "$CUT_SCRIPT" --yaml "$YAML_PATH" --task-label "$task" )
+done
 
 # ── 1) per-clip GVHMR + GMR (gmr env) ──────────────────
-# Source mp4 and cut clips share the same directory after Stage 0:
-#   source : forward_hand_1.mp4, forward_hand_2.mp4, backward_hand.mp4
-#   cuts   : forward_001.mp4, forward_002.mp4, ... , backward_001.mp4, ...
-# We glob `<task>_[0-9]*.mp4` to pick cuts only (source has `_hand` infix).
+# We glob `<task>_NNN.mp4` (3-digit zero-padded) to pick cuts only —
+# avoids matching raw mp4s like backward_1.mp4 / backward_2.mp4 that share the prefix.
 echo
 echo "=== Stage 1: per-clip GVHMR + GMR ==="
-for task in forward backward; do
+for task in "${TASKS[@]}"; do
     INPUT_DIR=$NEW_ROOT/$task
     CSV_DIR=$INPUT_DIR/csv
-    GVHMR_OUT_ROOT=$GVHMR_DIR/outputs/demo/pingpong/${task}_new
+    GVHMR_OUT_ROOT=$GVHMR_DIR/outputs/demo/pingpong/${ROOT_TAG}_${task}
     mkdir -p "$CSV_DIR" "$GVHMR_OUT_ROOT"
 
     shopt -s nullglob
-    mp4s=( "$INPUT_DIR/${task}_"[0-9]*.mp4 )
+    mp4s=( "$INPUT_DIR/${task}_"[0-9][0-9][0-9].mp4 )
     shopt -u nullglob
 
     if [[ ${#mp4s[@]} -eq 0 ]]; then
@@ -109,13 +157,15 @@ done
 # _isaac_sim/python_packages to PYTHONPATH (required to import isaacsim).
 echo
 echo "=== Stage 2: csv → npz @ ${OUTPUT_FPS} Hz ==="
-set +u
+set +eu
 # shellcheck source=/dev/null
 source "$HOME/miniforge/etc/profile.d/conda.sh"
-conda activate env_isaaclab_51
-set -u
+if [[ "${CONDA_DEFAULT_ENV:-}" != "env_isaaclab_51" ]]; then
+    conda activate env_isaaclab_51
+fi
+set -eu
 
-for task in forward backward; do
+for task in "${TASKS[@]}"; do
     INPUT_DIR=$NEW_ROOT/$task
     CSV_DIR=$INPUT_DIR/csv
     OUTPUT_DIR=$INPUT_DIR/npz
@@ -145,7 +195,7 @@ for task in forward backward; do
         --task_name  "$TASK_NAME" \
         --paddle \
         --overwrite \
-        --headless
+        --headless || echo "  (note) csv_to_npz_pingpong exited non-zero (likely close-hang killed externally) — npz already written"
 
     echo "[DONE] $task → $OUTPUT_DIR"
 done

@@ -1,0 +1,115 @@
+robot:
+  xml: deploy/robots/g1_23dof_pingpong_mujoco/assets/g1_23dof_pingpong_scene.xml
+  control_dt: 0.02
+  sim_dt: 0.001
+  sim_decimation: 20
+  ball_body: pingpong_ball
+  ball_free_joint: pingpong_ball_free_joint
+  paddle_body: right_paddle_blade
+  root_body: pelvis
+  unitree_network: null
+
+policy:
+  default_policy: hitter
+  switch_keys:
+    next: N
+    prev: P
+    hitter: H
+    stand: F
+  policies:
+    - name: hitter
+      type: rsl_rl_actor
+      # checkpoint: logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/server/model_11000_11.pt
+      checkpoint: logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/2026-06-06_10-18-09_new_PD/model_12000.pt
+      deploy_yaml: logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/2026-06-06_10-18-09_new_PD/params/deploy.yaml
+      activation: elu
+      action_clip: 10.0
+      action_beta: 1.0
+    - name: stand
+      type: fixed_pose
+      deploy_yaml: logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/2026-06-06_10-18-09_new_PD/params/deploy.yaml
+      # deploy_yaml: logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/server/params/deploy.yaml
+
+planner:
+  # Fill these with the exact expert npz pair used by the policy you deploy,
+  # or pass --forward-npz / --backward-npz from the command line.
+  forward_motion_file: /home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/pingpong/humanoid_data/final/expert/new_3/forward/npz/forward_001_wristfix_rotated.npz
+  backward_motion_file: /home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/pingpong/humanoid_data/final/expert/new_3/backward/npz/backward_001_rotated.npz
+  forehand_y_safety_clamp: 0.40
+  # null = derive from npz expert offset (~0.537m, slightly INSIDE the table).
+  # 0.40 = table near edge in world coords (table_center_x 1.77 − half_x 1.37).
+  # Setting this forces the virtual hit plane onto the edge of the table so
+  # paddle/ball contact happens right at the rim where the robot can reach.
+  x_hit_default: 0.4
+  z_min_world: 0.85
+  z_max_world: 1.25
+  y_max_dev: 1.00
+  table_z: 0.76
+  target_land_world: [2.45, 0.0, 0.78]
+  flight_time: 0.45
+  paddle_cor: 0.85
+  # Match RealPingpongCommandCfg / planner_for_training.py. These are used by
+  # MuJoCo sim2sim so table-bounce prediction is in the training world frame
+  # instead of runtime planner.py's legacy table-centered frame.
+  planner_dt: 0.01
+  planner_max_time: 1.50
+  planner_drag_k: 0.10257265376884504
+  planner_bounce_ch: 0.727005044772834
+  planner_bounce_cv: 0.9018357357260598
+  planner_min_t_to_hit: 0.05
+  planner_max_t_to_hit: 1.20
+  # HITTER-REAL validation mode: keep refreshing planner spatial targets from
+  # the simulated ball. Only t_to_hit is latched/decremented by sim time.
+  freeze_time_before_hit: 0.0
+  post_swing_time: 0.6
+  # true: after impact, t_to_hit keeps decreasing until -post_swing_time,
+  #       preserving the post-hit imitation/recovery timing.
+  # false: once t_to_hit reaches 0, expose -post_swing_time immediately and
+  #        hold it there until a new serve/reset creates the next command.
+  post_hit_imitation: false
+  fresh_min_t_to_hit: 0.05
+
+serve:
+  pos_x_range: [2.55, 3.05]
+  pos_y_range: [-0.20, 0.20]
+  pos_z_range: [1.05, 1.20]
+  # null means use planner.x_hit_default after npz-derived fallback/override.
+  hit_x: null
+  hit_y_range: [-0.35, 0.35]
+  hit_z_range: [0.95, 1.15]
+  t_to_hit_range: [0.55, 0.75]
+  max_speed: 6.0
+  auto_serve: true
+  # Strict fixed serve cadence — a fresh ball every N seconds regardless of
+  # swing state. Lets each swing fully play out (>= 2.5 s recommended).
+  auto_interval_s: 5.0
+  reset_after_s: 4.0
+
+world:
+  # Match PingpongCommandCfg.reset_root_pos used by IsaacLab training/reset.
+  reset_root_pos: [0.0, 0.0, 0.74]
+  reset_root_quat_wxyz: [1.0, 0.0, 0.0, 0.0]
+  table_center: [1.77, 0.0, 0.735]
+  table_size: [2.74, 1.525, 0.05]
+  table_top_z: 0.76
+  net_x: 1.77
+  net_top_z: 0.9125
+  ball_radius: 0.02
+
+unitree:
+  msg_type: hg
+  lowcmd_topic: rt/lowcmd
+  lowstate_topic: rt/lowstate
+  control_dt: 0.02
+  mode_machine: 0
+
+safety:
+  # Same gate as the C++ deploy (deploy/include/isaaclab/envs/mdp/terminations.h
+  # bad_orientation): tilt_rad = acos(-projected_gravity_b.z). When the angle
+  # between -Z_body and world up exceeds this, latch DAMPING mode (kp=0, kd>0,
+  # target=current_q). 1.0 rad ≈ 57.3°. Press R to disarm + reset.
+  fall_limit_angle_rad: 1.0
+  # Hold default pose with full PD for this many seconds before engaging the
+  # policy. Lets the actor's first inference see a settled, in-distribution
+  # state instead of the post-reset settling transient. CLI --warmup-s overrides.
+  warmup_s: 0.1

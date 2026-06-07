@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 import torch
 
 from isaaclab.assets import RigidObject
-from isaaclab.markers import VisualizationMarkers
-from isaaclab.markers.config import BLUE_ARROW_X_MARKER_CFG, GREEN_ARROW_X_MARKER_CFG, RED_ARROW_X_MARKER_CFG
 from isaaclab.utils import configclass
 try:
     from isaaclab.utils.math import quat_apply, sample_uniform
@@ -20,41 +18,6 @@ from .planner_for_training import PLAN_FROZEN, PLAN_FRESH, plan_pingpong_hits
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
-
-
-def _quat_from_x_axis(direction: torch.Tensor) -> torch.Tensor:
-    """Return wxyz quaternions that rotate the marker +X axis onto each world direction."""
-    norm = torch.linalg.norm(direction, dim=-1, keepdim=True)
-    unit = direction / norm.clamp_min(1.0e-6)
-    default_dir = torch.zeros_like(unit)
-    default_dir[:, 0] = 1.0
-    unit = torch.where(norm > 1.0e-6, unit, default_dir)
-
-    dot = unit[:, 0].clamp(-1.0, 1.0)
-    quat = torch.zeros(direction.shape[0], 4, dtype=direction.dtype, device=direction.device)
-    quat[:, 0] = 1.0 + dot
-    quat[:, 2] = -unit[:, 2]
-    quat[:, 3] = unit[:, 1]
-
-    opposite = dot < -0.9999
-    if torch.any(opposite):
-        quat[opposite] = torch.tensor((0.0, 0.0, 0.0, 1.0), dtype=direction.dtype, device=direction.device)
-    small = norm.squeeze(-1) <= 1.0e-6
-    if torch.any(small):
-        quat[small] = torch.tensor((1.0, 0.0, 0.0, 0.0), dtype=direction.dtype, device=direction.device)
-    return quat / torch.linalg.norm(quat, dim=-1, keepdim=True).clamp_min(1.0e-6)
-
-
-def _arrow_scales(
-    magnitude: torch.Tensor,
-    base_scale: tuple[float, float, float],
-    gain: float,
-    min_x: float,
-    max_x: float,
-) -> torch.Tensor:
-    scale = torch.tensor(base_scale, dtype=magnitude.dtype, device=magnitude.device).repeat(magnitude.shape[0], 1)
-    scale[:, 0] *= torch.clamp(magnitude * gain, min=min_x, max=max_x)
-    return scale
 
 
 class RealPingpongCommand(PingpongCommand):
@@ -81,8 +44,6 @@ class RealPingpongCommand(PingpongCommand):
         self.first_post_hit_bounce_done = torch.zeros(n, dtype=torch.bool, device=self.device)
         self.net_cross_checked = torch.zeros(n, dtype=torch.bool, device=self.device)
         self.missed_swing = torch.zeros(n, dtype=torch.bool, device=self.device)
-        self.outcome_hold_active = torch.zeros(n, dtype=torch.bool, device=self.device)
-        self.outcome_hold_time_left = torch.zeros(n, device=self.device)
 
         self.actual_contact_pos_world = torch.zeros(n, 3, device=self.device)
         self.actual_contact_time_err = torch.zeros(n, device=self.device)
@@ -98,6 +59,11 @@ class RealPingpongCommand(PingpongCommand):
         self._ball_traj_points = torch.zeros(n, cfg.debug_ball_traj_len, 3, device=self.device)
         self._ball_traj_valid = torch.zeros(n, cfg.debug_ball_traj_len, dtype=torch.bool, device=self.device)
         self._ball_traj_cursor = torch.zeros(n, dtype=torch.long, device=self.device)
+
+        # PLAY-ONLY post-outcome hold (cfg.post_outcome_hold_time>0). Holds a decided
+        # swing before serving the next ball so the post-strike motion is viewable.
+        self._post_outcome_holding = torch.zeros(n, dtype=torch.bool, device=self.device)
+        self._post_outcome_hold_remaining = torch.zeros(n, device=self.device)
 
         self._real_swing_count = torch.zeros(n, device=self.device)
         self._real_hit_count = torch.zeros(n, device=self.device)
@@ -163,12 +129,6 @@ class RealPingpongCommand(PingpongCommand):
         if len(active) > 0:
             self.t_to_hit[active] -= self.dt
             self.cur_step[active] += 1
-        holding = torch.nonzero(self.active_swing & self.outcome_hold_active, as_tuple=False).flatten()
-        if len(holding) > 0:
-            self.outcome_hold_time_left[holding] = torch.clamp(
-                self.outcome_hold_time_left[holding] - self.dt,
-                min=0.0,
-            )
 
         self._record_ball_debug_traj()
 
@@ -203,24 +163,33 @@ class RealPingpongCommand(PingpongCommand):
         if len(missed) > 0:
             self.missed_swing[missed] = True
 
-        done_mask = (
+        done = torch.nonzero(
             self.active_swing
             & (
                 (self.t_to_hit <= -self.t_post_swing)
                 | self.target_land_success
                 | self.missed_swing
                 | self.illegal_contact
-            )
-        )
-        if self.cfg.post_outcome_hold_time > 0.0:
-            start_hold = done_mask & (~self.outcome_hold_active)
-            if torch.any(start_hold):
-                self.outcome_hold_active[start_hold] = True
-                self.outcome_hold_time_left[start_hold] = float(self.cfg.post_outcome_hold_time)
-            done_mask = done_mask & self.outcome_hold_active & (self.outcome_hold_time_left <= 0.0)
-
-        done = torch.nonzero(done_mask, as_tuple=False).flatten()
+            ),
+            as_tuple=False,
+        ).flatten()
+        # PLAY-ONLY: when post_outcome_hold_time>0, delay the serve by that many
+        # seconds so the post-strike motion is observable (training keeps it 0.0 =
+        # serve immediately, unchanged). The swing stays active during the hold, so
+        # t_to_hit keeps decreasing (the OOD post-swing window is intentional here).
+        if self.cfg.post_outcome_hold_time > 0.0 and len(done) > 0:
+            outcome = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            outcome[done] = True
+            new_hold = outcome & (~self._post_outcome_holding)
+            self._post_outcome_holding[new_hold] = True
+            self._post_outcome_hold_remaining[new_hold] = self.cfg.post_outcome_hold_time
+            self._post_outcome_hold_remaining[self._post_outcome_holding] -= self.dt
+            done = torch.nonzero(
+                self._post_outcome_holding & (self._post_outcome_hold_remaining <= 0.0), as_tuple=False
+            ).flatten()
         if len(done) > 0:
+            self._post_outcome_holding[done] = False
+            self._post_outcome_hold_remaining[done] = 0.0
             self._complete_real_swing(done)
             self._serve_ball(done)
             self._reset_real_swing_state(done)
@@ -338,7 +307,7 @@ class RealPingpongCommand(PingpongCommand):
             self.cur_step[use_ids] = 0
             self.active_swing[use_ids] = True
             self.target_frozen[use_ids] = False
-            self.swing_change_remaining[use_ids] = 1
+            self.swing_change_remaining[use_ids] = 0  # swing locked at sample time, no mid-swing flips
             self._reset_window_flags(use_ids)
             self._reset_real_swing_flags(use_ids)
 
@@ -506,6 +475,8 @@ class RealPingpongCommand(PingpongCommand):
         self.target_frozen[ids] = False
         self.planner_valid[ids] = False
         self.plan_mode[ids] = 0
+        self._post_outcome_holding[ids] = False
+        self._post_outcome_hold_remaining[ids] = 0.0
         self._reset_real_swing_flags(ids)
 
     def _reset_real_swing_flags(self, ids: torch.Tensor) -> None:
@@ -519,8 +490,6 @@ class RealPingpongCommand(PingpongCommand):
         self.first_post_hit_bounce_done[ids] = False
         self.net_cross_checked[ids] = False
         self.missed_swing[ids] = False
-        self.outcome_hold_active[ids] = False
-        self.outcome_hold_time_left[ids] = 0.0
         self.actual_contact_pos_world[ids] = 0.0
         self.actual_contact_time_err[ids] = 0.0
         self.actual_contact_pos_err[ids] = 0.0
@@ -557,29 +526,6 @@ class RealPingpongCommand(PingpongCommand):
         self._planner_traj_points[ids, :n] = traj_p[:, :n]
         self._planner_traj_valid[ids, :n] = traj_valid[:, :n]
 
-    def _set_debug_vis_impl(self, debug_vis: bool):
-        super()._set_debug_vis_impl(debug_vis)
-        if debug_vis:
-            if self.cfg.debug_show_direction_arrows and not hasattr(self, "target_normal_arrow_visualizer"):
-                normal_cfg = RED_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Pingpong/target_normal")
-                desired_vel_cfg = GREEN_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Pingpong/desired_racket_velocity")
-                current_vel_cfg = BLUE_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Pingpong/current_blade_velocity")
-                normal_cfg.markers["arrow"].scale = self.cfg.debug_normal_arrow_base_scale
-                desired_vel_cfg.markers["arrow"].scale = self.cfg.debug_desired_velocity_arrow_base_scale
-                current_vel_cfg.markers["arrow"].scale = self.cfg.debug_current_velocity_arrow_base_scale
-                self.target_normal_arrow_visualizer = VisualizationMarkers(normal_cfg)
-                self.desired_velocity_arrow_visualizer = VisualizationMarkers(desired_vel_cfg)
-                self.current_velocity_arrow_visualizer = VisualizationMarkers(current_vel_cfg)
-            if hasattr(self, "target_normal_arrow_visualizer"):
-                visible = bool(self.cfg.debug_show_direction_arrows)
-                self.target_normal_arrow_visualizer.set_visibility(visible)
-                self.desired_velocity_arrow_visualizer.set_visibility(visible)
-                self.current_velocity_arrow_visualizer.set_visibility(visible)
-        elif hasattr(self, "target_normal_arrow_visualizer"):
-            self.target_normal_arrow_visualizer.set_visibility(False)
-            self.desired_velocity_arrow_visualizer.set_visibility(False)
-            self.current_velocity_arrow_visualizer.set_visibility(False)
-
     def _debug_vis_callback(self, event):
         if not self.robot.is_initialized or not hasattr(self, "target_visualizer"):
             return
@@ -608,85 +554,31 @@ class RealPingpongCommand(PingpongCommand):
             dim=1,
         ).reshape(-1, 3)
 
-        point_groups = [self.p_hit_world]
-        if self.cfg.debug_show_aux_targets:
-            point_groups.append(base_target)
-        if self.cfg.debug_show_vectors:
-            point_groups.extend((target_normal_end, racket_vel_end, blade_normal_end))
-        if self.cfg.debug_show_current_ball_marker:
-            point_groups.append(self.ball.data.root_pos_w)
-        if self.cfg.debug_show_net_points:
-            point_groups.append(net_points)
+        # Predicted/expected markers (strike point, expected normal & swing-vel ends,
+        # planner trajectory) are shown ONLY while a swing is live and not yet resolved.
+        # After the strike (legal_contact) or a miss — including the post_outcome hold
+        # window — they are cleared until the next cmd serves. The ball, base target,
+        # ACTUAL face normal and net stay visible throughout.
+        show_pred = self.active_swing & (~self.legal_contact) & (~self.missed_swing)
+
+        point_groups = [
+            self.ball.data.root_pos_w,
+            base_target,
+            blade_normal_end,
+            net_points,
+        ]
+        if torch.any(show_pred):
+            point_groups.append(self.p_hit_world[show_pred])
+            point_groups.append(target_normal_end[show_pred])
+            point_groups.append(racket_vel_end[show_pred])
         blade_traj_points = self._debug_traj_points[self._debug_traj_valid]
-        planner_traj_points = self._planner_traj_points[self._planner_traj_valid]
+        planner_traj_points = self._planner_traj_points[self._planner_traj_valid & show_pred.unsqueeze(-1)]
         ball_traj_points = self._ball_traj_points[self._ball_traj_valid]
         landing_points = self.landing_pos_world[self.landing_pos_valid]
-        optional_groups = (
-            (self.cfg.debug_show_blade_traj, blade_traj_points),
-            (self.cfg.debug_show_planner_traj, planner_traj_points),
-            (self.cfg.debug_show_ball_traj, ball_traj_points),
-            (self.cfg.debug_show_landing_points, landing_points),
-        )
-        for enabled, points in optional_groups:
-            if not enabled:
-                continue
+        for points in (blade_traj_points, planner_traj_points, ball_traj_points, landing_points):
             if points.numel() > 0:
                 point_groups.append(points)
-        debug_points = torch.cat(point_groups, dim=0)
-        debug_scales = torch.tensor(self.cfg.debug_point_scale, dtype=torch.float32, device=self.device).repeat(
-            debug_points.shape[0], 1
-        )
-        self.target_visualizer.visualize(translations=debug_points, scales=debug_scales)
-        self._debug_visualize_direction_arrows()
-
-    def _debug_visualize_direction_arrows(self) -> None:
-        if not self.cfg.debug_show_direction_arrows or not hasattr(self, "target_normal_arrow_visualizer"):
-            return
-        z_offset = torch.tensor((0.0, 0.0, 0.035), dtype=torch.float32, device=self.device).view(1, 3)
-
-        normal_mag = torch.ones(self.num_envs, dtype=torch.float32, device=self.device)
-        normal_scale = _arrow_scales(
-            normal_mag,
-            self.cfg.debug_normal_arrow_base_scale,
-            gain=self.cfg.debug_normal_arrow_gain,
-            min_x=self.cfg.debug_normal_arrow_min_x,
-            max_x=self.cfg.debug_normal_arrow_max_x,
-        )
-        self.target_normal_arrow_visualizer.visualize(
-            translations=self.p_hit_world + z_offset,
-            orientations=_quat_from_x_axis(self.n_target_world),
-            scales=normal_scale,
-        )
-
-        desired_mag = torch.linalg.norm(self.v_racket_hat_world, dim=-1)
-        desired_scale = _arrow_scales(
-            desired_mag,
-            self.cfg.debug_desired_velocity_arrow_base_scale,
-            gain=self.cfg.debug_desired_velocity_arrow_gain,
-            min_x=self.cfg.debug_desired_velocity_arrow_min_x,
-            max_x=self.cfg.debug_desired_velocity_arrow_max_x,
-        )
-        self.desired_velocity_arrow_visualizer.visualize(
-            translations=self.p_hit_world
-            + torch.tensor(self.cfg.debug_desired_velocity_arrow_offset, dtype=torch.float32, device=self.device).view(1, 3),
-            orientations=_quat_from_x_axis(self.v_racket_hat_world),
-            scales=desired_scale,
-        )
-
-        current_vel = self.robot_blade_lin_vel_w
-        current_mag = torch.linalg.norm(current_vel, dim=-1)
-        current_scale = _arrow_scales(
-            current_mag,
-            self.cfg.debug_current_velocity_arrow_base_scale,
-            gain=self.cfg.debug_current_velocity_arrow_gain,
-            min_x=self.cfg.debug_current_velocity_arrow_min_x,
-            max_x=self.cfg.debug_current_velocity_arrow_max_x,
-        )
-        self.current_velocity_arrow_visualizer.visualize(
-            translations=self.robot_blade_pos_w + z_offset,
-            orientations=_quat_from_x_axis(current_vel),
-            scales=current_scale,
-        )
+        self.target_visualizer.visualize(translations=torch.cat(point_groups, dim=0))
 
 
 @configclass
@@ -704,7 +596,6 @@ class RealPingpongCommandCfg(PingpongCommandCfg):
     ball_radius: float = 0.02
 
     t_post_swing_fixed: float = 0.60
-    post_outcome_hold_time: float = 0.0
     freeze_time_before_hit: float = 0.20
     miss_grace_time: float = 0.10
     real_contact_window: float = 0.08
@@ -744,26 +635,9 @@ class RealPingpongCommandCfg(PingpongCommandCfg):
     ball_dead_x_abs: float = 3.5
     debug_planner_traj_len: int = 64
     debug_ball_traj_len: int = 64
-    debug_show_aux_targets: bool = True
-    debug_show_vectors: bool = True
-    debug_show_current_ball_marker: bool = False
-    debug_show_net_points: bool = False
-    debug_show_blade_traj: bool = False
-    debug_show_planner_traj: bool = False
-    debug_show_ball_traj: bool = True
-    debug_show_landing_points: bool = True
-    debug_show_direction_arrows: bool = True
-    debug_point_scale: tuple[float, float, float] = (0.35, 0.35, 0.35)
-    debug_normal_arrow_base_scale: tuple[float, float, float] = (0.35, 0.08, 0.08)
-    debug_desired_velocity_arrow_base_scale: tuple[float, float, float] = (0.55, 0.12, 0.12)
-    debug_current_velocity_arrow_base_scale: tuple[float, float, float] = (0.30, 0.08, 0.08)
-    debug_desired_velocity_arrow_offset: tuple[float, float, float] = (0.0, -0.12, 0.10)
-    debug_normal_arrow_gain: float = 1.0
-    debug_normal_arrow_min_x: float = 1.0
-    debug_normal_arrow_max_x: float = 1.0
-    debug_desired_velocity_arrow_gain: float = 0.65
-    debug_desired_velocity_arrow_min_x: float = 0.60
-    debug_desired_velocity_arrow_max_x: float = 2.40
-    debug_current_velocity_arrow_gain: float = 0.35
-    debug_current_velocity_arrow_min_x: float = 0.25
-    debug_current_velocity_arrow_max_x: float = 1.40
+    # PLAY-ONLY (default 0.0 => training behaviour unchanged): after a swing outcome
+    # is decided, hold the (now stale) command this many seconds before serving the
+    # next ball, so the post-strike motion is observable. While holding, the actor
+    # sees t_to_hit << 0 (an OOD state) — this is for viewing only; set >0 only in
+    # the play env cfg.
+    post_outcome_hold_time: float = 0.0

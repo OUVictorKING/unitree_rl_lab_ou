@@ -1,7 +1,5 @@
-# Paper-Aligned EnvCfg v5.7 — HITTER (arXiv:2508.21043v2)
+<!-- # Paper-Aligned EnvCfg v5.7 — HITTER (arXiv:2508.21043v2)
 首先详细阅读文章 `/home/woan/文档/zotero/AllData/storage/7XEMW63Q/Su 等 - 2025 - HITTER A HumanoId Table TEnnis Robot via Hierarchical Planning and Learning.pdf`。
-
-这个大纲只是训练机器人跟踪击球的动作以及速度、拍面朝向，并没有真正的击球物理仿真。
 
 ## Context
 
@@ -15,16 +13,16 @@
 5. **`r^c -> r^bp`**: 上半身各 body 的 anchor-relative position 跟踪，排除 `right_paddle_blade`；body-level velocity 不在此项，权重不能太高。
 6. **`r_g_ori` 目标来自 `cmd.n_target_world`**: `n_target_world = (v_ball_out_world - v_ball_in_world) / ||v_ball_out_world - v_ball_in_world||`，即 paper Eq.5 的 paddle normal，不再由 `v_racket_hat_world / ||v_racket_hat_world||` 在 reward 端重新定义。
 7. Obs `t_strike` 统一命名为 **`t_to_hit`** (剩余击球时间)，不存绝对击球时刻。
-8. **Cmd hit point sample 初始范围**: `x = 0.4 m fixed`, `y in [0.05, 0.25] m`, `z in [0.95, 1.15] m`，均为 world frame；该范围由当前 expert impact blade z 与 forehand/backhand base-frame offset 反推，必须高于 table top `z=0.76`，不得再使用 `[0.08,0.60]` 的旧地下/桌下范围。
+8. **Cmd hit point sample 范围**: `x = 0.4 m fixed`, `y in [-1, 1] m`, `z in [0.08, 0.6] m`，均为 world frame。
 9. **Cmd planner 与训练 cmd 解耦**: planner 上层只关心“击球点 ↔ base”相对关系；训练端不 import `planner.solve_paddle_target`，只在 `commands.py` 内 inline 同一套 paper Eq.5/Eq.6 公式。
 10. **`r^p / r^v` 关节集合 J**: 仅上半身，排除 `right_wrist_roll_joint`，|J|=10。
 11. **`v_racket_hat_world` 不再直接采样**: 由 `p_hit_world / v_ball_in_world / target_land_world / flight_time / paddle_cor` 按 paper Eq.5+Eq.6 推导得到。
-12. **`v_ball_in_world` 初始采样**: `v_in_mag ~ U[2,4]`, `v_in_yaw = pi + U[-40 deg, +40 deg]`, `v_in_pitch ~ U[-75 deg, +75 deg]`，允许下落球；课程后可扩展到 `U[2,5.5]`。
+12. **`v_ball_in_world` 采样**: `v_in_mag ~ U[2,6]`, `v_in_yaw = pi + U[-40 deg, +40 deg]`, `v_in_pitch ~ U[-75 deg, +75 deg]`，允许下落球。
 13. **`target_land_world` 常量**: `(2.45, 0.0, 0.78)`，即对方半桌中心 + 桌面高度 + 球半径。
 14. **`flight_time` 采样**: `uniform[0.30, 0.65]` 秒。
 15. **`paddle_cor` 常量**: `0.85`，不做 domain randomization。
 16. **`t_pre_initial`**: `truncN(low=0.20, high=0.90, peak_low=0.30, peak_high=0.65)` 秒。
-17. **`t_post_swing`**: 固定为 `0.60s`。这是第一版 HITTER 的硬约束，用负的 `t_to_hit` 唯一表示 post recovery phase，避免 Actor 在不可观测随机 post 时长下学习恢复段。
+17. **`t_post_swing`**: `truncN(low=0.40, high=1.10, peak_low=0.40, peak_high=0.75)` 秒。
 18. **Cmd 重采样边界**: `t_to_hit <= -t_post_swing`，即 pre 段与 post 段都走完后立即重采样。
 19. **Action scale**: 不用全局 0.25，复用 `UNITREE_G1_23DOF_PADDLE_MIMIC_ACTION_SCALE`，即 `0.25 * effort_limit / stiffness`。
 20. **表桌碰撞**: 在 scene 中生成静态长方体 table，用 filtered `ContactSensor` 读 robot-table 接触，作为 `r_table_contact` 软惩罚，不作为 termination。
@@ -161,7 +159,7 @@
 | +x | 从机器人侧指向对方半桌 | 回球目标在 +x 方向 |
 | table top | `z=0.76` | table cuboid center z=0.38, 高 0.76 |
 | 近端桌沿 / 击球平面 | `x=0.4` | `p_hit_world.x` 固定为 0.4 |
-| `p_hit_world` | `(0.4, hit_y, hit_z)` | 初始 `hit_y∈[0.05,0.25]`, `hit_z∈[0.95,1.15]`；课程最多扩展到 `hit_y∈[-0.65,0.65]`, `hit_z∈[0.85,1.25]` |
+| `p_hit_world` | `(0.4, hit_y, hit_z)` | `hit_y∈[-1,1]`, `hit_z∈[0.08,0.60]` |
 | `target_land_world` | `(2.45, 0.0, 0.78)` | 对方半桌中心 + 桌面高度 + 球半径 |
 | robot reset nominal | env origin 附近, 朝 +x | root xy/yaw 不照搬 expert 世界坐标；见 §7.4 |
 
@@ -173,8 +171,8 @@
 |---|---|:---:|---|---|---|:---:|:---:|:---:|
 | 1 | `swing_type` | 1 (cat) | — | swing 重采 + pre-strike 1-change lock (§3.3) | `forehand if hit_y_base > 0.157 else backhand` | ✗ (隐含 ref clip selector) | ✗ | △ deploy heuristic |
 | 2 | `swing_change_remaining` | 1 (int) | — | resample 时设 1，首次变更后置 0 | `{0, 1}` | ✗ | ✗ | ⚠️ |
-| 3 | `p_hit_world` | 3 | world | swing 重采时 sample | `x=0.4` 固定；初始 `y∈U[0.05,0.25]`、`z∈U[0.95,1.15]`；课程最多扩展到 `y∈U[-0.65,0.65]`、`z∈U[0.85,1.25]` | ✓ obs #5 (转 base-rel) | ✓ | ✓ V-B |
-| 4 | `v_ball_in_world` | 3 | world | swing 重采时 sample | 初始 `mag∈U[2,4]`; 课程最多 `U[2,5.5]`; `yaw=π+U[-40°,40°]`; `pitch∈U[-75°,75°]` | ✗ | ✗ | ⚠️ R-1 |
+| 3 | `p_hit_world` | 3 | world | swing 重采时 sample | `x=0.4` 固定；`y∈U[-1,1]`；`z∈U[0.08,0.6]` | ✓ obs #5 (转 base-rel) | ✓ | ✓ V-B |
+| 4 | `v_ball_in_world` | 3 | world | swing 重采时 sample | `mag∈U[2,6]`; `yaw=π+U[-40°,40°]`; `pitch∈U[-75°,75°]` | ✗ | ✗ | ⚠️ R-1 |
 | 5 | `target_land_world` | 3 | world | 常量 | `(2.45, 0.0, 0.78)` | ✗ | ✗ | ⚠️ R-2 |
 | 6 | `flight_time` | 1 | — | swing 重采时 sample | `uniform[0.30, 0.65]` 秒 | ✗ | ✗ | ⚠️ R-3 |
 | 7 | `paddle_cor` | 1 | — | 常量 | `0.85` (= paper Eq.6 restitution) | ✗ | ✗ | ✓ IV-C |
@@ -184,7 +182,7 @@
 | 11 | `p_base_xy_world` | 2 | world | swing 重采或 swing_type 变更时计算 | `hit_xy_world - R(yaw_robot) @ expert_offset_base[swing_type]` | ✓ obs #4 | ✓ | ✓ V-B |
 | 12 | `t_to_hit` | 1 | — | resample 时 = `t_pre_initial`; 每 step `-= dt` | `[-t_post_swing, t_pre_initial]` | ✓ obs #7 | ✓ | ✓ V-B |
 | 13 | `t_pre_initial` | 1 | — | resample 时 sample | `truncN(0.20, 0.90, 0.30, 0.65)` 秒 | ✗ | ✗ | ⚠️ Q |
-| 14 | `t_post_swing` | 1 | — | 常量 | 固定 `0.60s` | ✗ | ✗ | ⚠️ Q |
+| 14 | `t_post_swing` | 1 | — | resample 时独立 sample | `truncN(0.40, 1.10, 0.40, 0.75)` 秒 | ✗ | ✗ | ⚠️ Q |
 | 15 | `cur_step` | 1 | — | resample 时复位 0；每 step +1 | int `[0, (t_pre+t_post)/dt]` | ✗ | ✗ | 内部 |
 
 **命名约定**:
@@ -288,7 +286,7 @@ def resample_cmd(env_id, cmd, robot, sigma_p_now=0.0, sigma_v_now=0.0, sigma_bas
     p_base_xy_world = np.array([hit_x_world, hit_y_world]) - expert_offset_world
 
     t_pre_initial = truncN(low=0.20, high=0.90, peak_low=0.30, peak_high=0.65)
-    t_post_swing = 0.60
+    t_post_swing = truncN(low=0.40, high=1.10, peak_low=0.40, peak_high=0.75)
 
     cmd.swing_type = swing_type
     cmd.swing_change_remaining = swing_change_remaining
@@ -935,9 +933,9 @@ obs_actor.t_to_hit = cmd.t_to_hit + cmd.noise_t
 
 | 参数 | 初始 (≥0%) | ≥30% | ≥50% | ≥75% (终值) |
 |---|---|---|---|---|
-| `hit_y` | `[0.05, 0.25]` m | linear → `[-0.15, 0.35]` | linear → `[-0.35, 0.55]` | linear → **`[-0.65, 0.65]`** m |
-| `hit_z` | `[0.95, 1.15]` | → `[0.92, 1.18]` | → `[0.88, 1.22]` | → **`[0.85, 1.25]`** |
-| `v_in_mag` | `[2.0, 4.0]` m/s | → `[2.0, 4.5]` | → `[2.0, 5.0]` | → **`[2.0, 5.5]`** m/s |
+| `hit_y` | `±0.5` m | linear → `±0.7` | linear → `±0.85` | linear → **`±1.0`** m |
+| `hit_z` | `[0.20, 0.45]` | → `[0.15, 0.50]` | → `[0.12, 0.55]` | → **`[0.08, 0.60]`** |
+| `v_in_mag` | `[2.5, 4.5]` m/s | → `[2.2, 5.0]` | → `[2.0, 5.5]` | → **`[2.0, 6.0]`** m/s |
 
 **调度形式**: 每个阶段触发后 1k iter linear 推到该阶段目标值. 单调扩展, 不收回.
 
@@ -953,9 +951,9 @@ obs_actor.t_to_hit = cmd.t_to_hit + cmd.noise_t
 | 3 | σ_p (cmd 位置) | 采样标准差 | 0 → **0.005** m | 击球成功率 ≥ 75% | 只升 | `update_cmd_noise_sigma_p` |
 | 4 | σ_v (cmd 速度) | 采样标准差 | 0 → **0.05** m/s | 击球成功率 ≥ 75% | 只升 | `update_cmd_noise_sigma_v` |
 | 5 | σ_base (cmd 站位) | 采样标准差 | 0 → **0.015** m | 击球成功率 ≥ 75% | 只升 | `update_cmd_noise_sigma_base` |
-| 6 | hit_y range | uniform 区间 | `[0.05,0.25]` → **`[-0.65,0.65]`** m | 击球成功率 (30/50/75%) | 扩展 | `update_hit_y_range` |
-| 7 | hit_z range | uniform 区间 | `[0.95,1.15]` → **`[0.85,1.25]`** | 击球成功率 (30/50/75%) | 扩展 | `update_hit_z_range` |
-| 8 | v_in_mag range | uniform 区间 | `[2.0,4.0]` → **`[2.0,5.5]`** m/s | 击球成功率 (30/50/75%) | 扩展 | `update_v_in_mag_range` |
+| 6 | hit_y range | uniform 区间 | ±0.5 → **±1.0** m | 击球成功率 (30/50/75%) | 扩展 | `update_hit_y_range` |
+| 7 | hit_z range | uniform 区间 | `[0.20,0.45]` → **`[0.08,0.60]`** | 击球成功率 (30/50/75%) | 扩展 | `update_hit_z_range` |
+| 8 | v_in_mag range | uniform 区间 | `[2.5,4.5]` → **`[2.0,6.0]`** m/s | 击球成功率 (30/50/75%) | 扩展 | `update_v_in_mag_range` |
 
 **统一原则** (v5.5): 所有 curriculum 都用**击球成功率**作为 metric (8.2 mimic_start_prob 删除后, 不再有 survival 驱动的课程), 阶梯阈值 30/50/65/75/80% 之间互相协调:
 - 击球成功率 ≥30%: σ_g_pos stage1 (→0.06) + 范围 stage1 扩展
@@ -968,7 +966,7 @@ obs_actor.t_to_hit = cmd.t_to_hit + cmd.noise_t
 
 ### 8.6 第一轮训练只开
 
-只开 **#1 σ_g_pos** 一条 (核心难度) [v5.5 A7: 原来 #1 + #2, 删 #2 后只剩 #1]. 其他 (cmd noise + 范围扩展) 留作 ablation; 训练第一轮使用初始可学范围 (`[0.05,0.25]` / `[0.95, 1.15]` / `[2.0, 4.0]`) 直接训，验证 baseline 稳定后再逐步开启范围扩展和 cmd noise。不得直接使用旧终值 (`±1.0` / `[0.08,0.60]` / `[2.0,6.0]`)。
+只开 **#1 σ_g_pos** 一条 (核心难度) [v5.5 A7: 原来 #1 + #2, 删 #2 后只剩 #1]. 其他 (cmd noise + 范围扩展) 留作 ablation; 训练第一轮可保持 hit_y/hit_z/v_in_mag 终值 (`±1.0` / `[0.08, 0.60]` / `[2.0, 6.0]`) 直接训, 验证 baseline 稳定后再加 cmd noise.
 
 ---
 
@@ -1036,7 +1034,7 @@ obs_actor.t_to_hit = cmd.t_to_hit + cmd.noise_t
 
 **用户决定 v5.4** (用户原话: "首先你需要记录正反手的专家数据在击球前后的时间, 然后这肯定和我们采样得到的时间有差距的, 那么就需要根据这个时间比例进行插值/抽帧了 (但是击球帧肯定要一致, 以击球帧重合为中心, 将时间分成击球前后两段时间)"):
 
-1. cmd 加新字段 `t_post_swing` (post-strike sim 时长), **固定为 `0.60s`**, 不进 obs
+1. cmd 加新字段 `t_post_swing` (post-strike sim 时长), **独立 truncN 采样**, 不进 obs
 2. **击球帧对齐**: sim 端 t_to_hit=0 那一 step 必对齐 ref 的 impact_frame
 3. **双段独立线性插值缩放**:
    - **pre-strike**: sim_step ∈ [0, sim_pre_steps] ↔ ref_frame ∈ [0, impact_frame] 线性插值
@@ -1389,7 +1387,7 @@ class PingpongCommand:
     # 时间字段
     t_to_hit: float                           # pre 段 t_pre→0，post 段 0→-t_post
     t_pre_initial: float                      # truncN[0.20,0.90,0.30,0.65]
-    t_post_swing: float                       # fixed 0.60s
+    t_post_swing: float                       # truncN[0.40,1.10,0.40,0.75]
     cur_step: int                             # sim step 计数，resample 时复位 0
 
     # cmd noise: 每次 resample 采一次并冻结，仅 Actor obs 注入
@@ -1592,3 +1590,169 @@ v5.7 净变化: 撤销“直接采样 `v_racket_hat_world`”和“独立采样 
 15. **Train/deploy bridge test**: 同一组 `p_hit_world / v_ball_in_world / target_land_world / flight_time / paddle_cor` 下，训练 inline Eq.5/Eq.6 与 deploy `solve_paddle_target` 输出一致；部署显式传 `target_land_world=(2.45,0,0.78)`。
 16. **Debug draw 1**: 每个 env 绘制 `p_hit_world`、`p_base_xy_world`、`n_target_world`、`v_racket_hat_world`、`blade normal`，检查坐标系和 normal 方向。
 17. **Debug draw 2**: strike window 内绘制 blade trajectory 与 `p_hit_world` 的距离曲线，确认 `t_to_hit=0` 时 `ref_frame_f==impact_frame` 且距离最低点落在窗口内。
+
+---
+
+## 16. 当前实施进度（2026-05-27 更新）
+
+> 本节记录 v57 设计文档落地后的实际训练状态，与上文「设计规约」分离。
+> 当前 run：`logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/2026-05-27_12-07-21_new_termination`
+> 当前 iter：6746（from-scratch）
+> 状态：🟢 训练正常推进，不需要任何干预
+
+### 16.1 v57 在 v50→v56 基础上的增量改动
+
+| # | 改动 | 文件 | 关联问题 | 状态 |
+|---|---|---|---|---|
+| C1 | 右臂 imit 解锁（v55 起） | `commands.py` `imitation_joint_names` 移除 `right_shoulder_yaw / right_elbow / right_wrist_roll` | M3 | ✅ |
+| C2 | 旋转 NPZ（v56 起） | `commands.py` 加载 `forward_003_rotated.npz` / `backward_001_rotated.npz` | 朝桌训练需求 | ✅ |
+| C3 | R8 Table 4 阶段课程 | `curriculums.py` `update_table_guard_stage` | R8 | ✅ |
+| C4 | Stage-aware termination | `terminations.py` `body_table_contact_sustained` 早返回 | R8 | ✅ |
+| C5 | Reset-time 桌面定位 | `events.py` `reset_table_position_by_stage` | R8 | ✅ |
+| C6 | 桌面初始下沉 | `hitter_env_cfg.py` L66 `init_state.pos=(1.77,0,-10)` | R8 | ✅ |
+| C7 | 接触 weight 初始 0 | `hitter_env_cfg.py` L351-372 paddle/body_table_contact.weight=0 | R8 | ✅ |
+
+### 16.2 R8 Table-guard 4 阶段状态机
+
+```
+Stage 0  hidden       —— 桌子在 z=-10，weight=0，flag=False
+   |
+   |  解锁条件（AND，全 batch 均值）：
+   |    hsr_ema       ≥ 0.65
+   |    cos_sim_ema   ≥ 0.50
+   |    ep_length_ema ≥ 400
+   |    iter          ≥ 1500
+   v
+Stage 1  unlocked     —— 翻 _pingpong_table_active=True；不主动 teleport
+   |                     靠 reset_table_position_by_stage EventTerm
+   |                     在每个 env 下次 reset 时自然搬桌子上来
+   |  保持 ramp_iters/4 iter（让所有 env 都 reset 过一遍）
+   v
+Stage 2  ramping      —— weight 0→target 线性 ramp 500 iter
+   |                     paddle_table_contact: 0 → -10
+   |                     body_table_contact:   0 → -1
+   v
+Stage 3  active       —— 等价于原版 HITTER from-scratch
+                        non_paddle_table_stuck termination 启用
+```
+
+设计要点：
+1. **不主动 teleport**：避免桌子突然出现砸到正在挥拍的 paddle
+2. **`ramp_iters/4` 静默期**：等所有 env 至少 reset 一次后再开始 weight ramp
+3. **Termination stage-gate**：Stage 0/1 期间 `non_paddle_table_stuck` 短路返回 zeros，policy 不会因「不可能的接触」被误终止
+4. **Reward weight 初始 0**：即便 flag 翻了，contact reward 仍由 ramp 控制，避免突变
+
+### 16.3 当前 run 进度快照（iter 6746）
+
+| 指标 | first50 | iter 5337 | iter 6746 | 趋势 |
+|---|---|---|---|---|
+| `mean_episode_length` | 25 | 442 | **487** | 🟢 站立稳固 |
+| `Curriculum/.../hit_success_rate` | 0.000 | 0.000 | **0.466** | 🟢 ⭐ 主要突破 |
+| `shape_tier` | 0 | 0 | **1** | 🟢 ratchet 推进一档 |
+| `cos_sim_ema` | -0.13 | 0.39 | **0.46**（max=0.55） | 🟢 持续爬升 |
+| `cos_sim_ratchet_freeze` | 1.00 | 0.99 | **0.90** | 🟢 开始破冰 |
+| `cos_sim_collapsed` | 1.00 | 0.13 | **0.002** | 🟢 不再崩 |
+| `vel_success_rate` | 0.56 | 0.49 | 0.52 | 🟡 卡瓶颈 |
+| `shape_hsr_ema` | 0 | 0 | **0.45** | 🟢 击球率累计 |
+| `w_goal_pos / vel / ori` | 0/0/0 | 0/0/0 | **3 / 3 / 1** | 🟢 ratchet 启动 |
+| `table_stage` | 0 | 0 | 0 | ⚪ 等解锁 |
+
+#### Reward 现状（按梯度大小）
+
+| Reward | last50 | 角色 |
+|---|---|---|
+| `goal_position` | +0.152 | 主梯度（paddle 位置跟踪） |
+| `goal_base` | +0.150 | 主梯度（base 跟随 clip） |
+| `imitation_body_pos` | +0.060 | 次梯度（上身姿态） |
+| `goal_orientation` | +0.045 | 弱（拍面朝向） |
+| `imitation_joint_pos` | +0.015 | 弱 |
+| `goal_velocity` | **+0.004** | **几乎为 0 ← 当前主要瓶颈** |
+
+#### Table-guard 解锁条件检查
+
+| 条件 | 阈值 | 当前 | 差距 |
+|---|---|---|---|
+| `iter` | ≥ 1500 | 6746 | ✅ |
+| `ep_length_ema` | ≥ 400 | 487 | ✅ |
+| `hsr_ema` | ≥ 0.65 | 0.45 | ❌ 差 0.20 |
+| `cos_sim_ema` | ≥ 0.50 | 0.46 | 🟡 差 0.04（max 已 0.55） |
+
+### 16.4 下一阶段预测
+
+| 预期 iter 区间 | 事件 | 触发信号 |
+|---|---|---|
+| 6800-8500 | cos_sim_ema 稳定破 0.50 → freeze 解锁 → shape_tier 升到 2 | sigma 进一步收紧，vel reward 梯度变陡 |
+| 8500-11000 | hsr_ema 爬到 0.65 → table-guard Stage 0→1 | flag 翻转，env reset 时 teleport |
+| 11000-11500 | Stage 1→2 静默期（ramp_iters/4 ≈ 125 iter） | 等所有 env reset 完 |
+| 11500-12000 | Stage 2 ramping，weight 0→(-10,-1)，hsr 短暂回落 | policy 学避桌 |
+| 12000+ | Stage 3 active，等价 v50 from-scratch 后期 | 跑到 hsr ≥ 0.85 |
+
+### 16.5 停训判据
+
+🟢 **正常停训（成功 → 切 hitter_real）**：
+- `hit_success_rate` ≥ 0.85 持续 500 iter
+- `vel_fail` ≤ 0.10
+- `cos_sim_ema` 500i 最低 ≥ 0.55
+- `ori_fail` ≤ 0.13
+- `imit_phase` ≥ 1
+- `table_stage` = 3 active
+- 满足全部 → 切 `hitter_real_env_cfg.py` 续训（带物理球）
+
+🔴 **异常停训（需介入）**：
+- iter > 10000 但 `cos_sim_ema` 50i 均值仍 < 0.50（freeze 永远不解锁）
+- iter > 10000 但 `hit_success_rate` 50i 均值 < 0.30（policy 不学击球）
+- table_stage 解锁后 hsr 暴跌 > 0.30 持续 1000 iter（避桌学不会）
+- actor std < 0 → PPO 数值崩
+
+🟡 **观察停（先存 ckpt）**：
+- shape_tier 升 2 后 `cos_sim_ema` 跌回 < 0.35（触发 R7 反向 ratchet）
+- `forehand_share` 漂到 [0.30, 0.70] 之外 1000 iter 以上（cheat basin）
+
+### 16.6 监控权威 namespace（避免 W5 误判）
+
+| 指标类 | 推荐 namespace | 备注 |
+|---|---|---|
+| 击球率 | `Curriculum/pingpong/hit_success_rate` | step-level batch 均值 |
+| 击球率（次） | `Metrics/pingpong/hit_success_rate` | 仅 episode 终结时累计，早期 time_out 主导会假性显示 0 |
+| 拍面对齐 | `Curriculum/pingpong/cos_sim_ema` | EMA |
+| Tier 进度 | `Curriculum/pingpong/shape_tier` | 离散值 0/1/2/... |
+| Freeze 状态 | `Curriculum/pingpong/cos_sim_ratchet_freeze` | 0=解冻，1=冻结，0.95-1.0 = 大部分时间冻结 |
+| Table 进度 | `Curriculum/table_guard/table_stage` | 离散 0/1/2/3 |
+| Vel reward | `Episode_Reward/goal_velocity` | 监控其爬升 |
+
+跨 tier 比较 metric 的注意事项：
+- `shape_*_ema(fail)` 是「相对当前 tier 的 fail rate」，跨 tier 比较无意义（升档 sigma 收紧自然反弹）
+- 跨 tier 比较只看：`hit_success_rate` / `mean_episode_length` / `vel_success_rate`
+
+### 16.7 关键决策记录
+
+1. **三阶段顺序：先学站、再学击球、最后加桌子**（用户决定）
+   - 理由：桌子在站立期是噪声源（R8 根因）；先学击球再加桌子的避桌学习成本可控
+2. **方案 B：teleport 而非 spawn/destroy**（用户决定）
+   - 理由：避免运行时改 scene graph 的复杂度；`init_state.pos` 在地下 + reset 时 teleport 上来即可
+3. **简单批均值 EMA，不用 p25 quantile**（用户决定）
+   - 理由：先求能学会，per-env outlier 不致命
+4. **保留旋转 NPZ 不回退**（用户坚持，并通过 `/tmp/check_clip_shoulder.py` 验证）
+   - 验证结果：`forward_003_rotated.npz` impact 帧 shoulder_pitch=+67.6°、shoulder_roll=+2.4° → forward-stance
+   - 结论：cos_sim 不上 0.50 不是 NPZ 的锅，是从 scratch 学习的自然慢爬
+
+### 16.8 待办（按优先级）
+
+| # | 内容 | 触发条件 | 估计工作量 |
+|---|---|---|---|
+| 1 | 等待 cos_sim_ema 破 0.50 | iter 8000-9000 自然达成 | 0 |
+| 2 | 验证 R8 table 解锁流程（teleport / ramp 是否符合预期） | hsr_ema 破 0.65 | 0.5h 看 log |
+| 3 | （潜在）vel reward 量级提升 | iter 12000 仍 vel_fail > 0.30 | 1h 改 weight，重训 |
+| 4 | 切 hitter_real 续训 | 满足 5 项停训判据 | 2h 配置 + 启动 |
+| 5 | 后续：动态球轨迹 / 实机部署 | hitter_real 收敛后 | TBD |
+
+### 16.9 与历史版本对比
+
+| 版本 | 主要改动 | 训练形态 | 状态 |
+|---|---|---|---|
+| v50（baseline） | 原版 HITTER 复现 | from-scratch | ❌ 站不起来（M1 RSI bug） |
+| v53 | M1 修复（root_quat 写入） | from-scratch | 🟡 cos_sim 起来但 ori_fail 高 |
+| v55 | M3：右臂 imit 解锁 | fine-tune from model_6000 | 🟢 hsr 0.72→0.82 |
+| v56 | 旋转 NPZ（forward stance 验证） | from-scratch | 🟡 cos_sim 卡 0.45 |
+| **v57** | **R8 table-guard 4 阶段课程** | **from-scratch** | 🟢 **当前 run，hsr 0→0.47 进行中** |
+ -->

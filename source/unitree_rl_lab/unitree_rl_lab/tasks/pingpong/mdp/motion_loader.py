@@ -101,15 +101,29 @@ class PingpongMotionClip:
         self.pre_duration = float(self.impact_frame / self.fps)
         self.post_duration = float((self.length - 1 - self.impact_frame) / self.fps)
 
+    def pelvis_yaw_at_frame(self, frames: torch.Tensor) -> torch.Tensor:
+        # Used by the RSI base-yaw fix: keep base orientation consistent with
+        # the sampled clip frame so n_blade_world matches n_target.
+        idx = frames.clamp(0, self.length - 1).long()
+        quats = self.body_quat_w_all[idx, self.pelvis_body_id]
+        return yaw_from_wxyz(quats)
+
     def frame_from_step(self, cur_step: torch.Tensor, t_pre: torch.Tensor, t_post: torch.Tensor, dt: float) -> torch.Tensor:
         sim_t = cur_step.to(torch.float32) * dt
         pre = t_pre.clamp_min(dt)
-        post = t_post.clamp_min(dt)
+        # v61: post-strike interpolation uses CLIP'S NATURAL post_duration as
+        # divisor (not t_post argument). This plays the demo follow-through at
+        # natural pace, then locks at last_frame for any remaining time before
+        # next swing samples (handled by clamp(0.0, 1.0) below). Previously
+        # using t_post as divisor stretched the shorter clip to fit t_post,
+        # creating slow-motion follow-through. The t_post arg is kept for
+        # signature compatibility but unused for interpolation pace.
         impact = float(self.impact_frame)
         last = float(self.length - 1)
+        clip_post = max(self.post_duration, dt)
 
         pre_frame = (sim_t / pre).clamp(0.0, 1.0) * impact
-        post_frame = impact + ((sim_t - pre) / post).clamp(0.0, 1.0) * (last - impact)
+        post_frame = impact + ((sim_t - pre) / clip_post).clamp(0.0, 1.0) * (last - impact)
         return torch.where(sim_t <= pre, pre_frame, post_frame).clamp(0.0, last)
 
     def sample(self, frame_f: torch.Tensor, env_origins: torch.Tensor) -> PingpongRefState:
