@@ -20,8 +20,9 @@
 
 #include <builtin_interfaces/msg/time.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
+
+#include "BallTrajFilter.h"
 
 class State_Pingpong : public FSMState
 {
@@ -126,6 +127,17 @@ private:
         const std::string &output_path = std::string(),
         const std::string &log_path = std::string());
     void policy_loop();
+
+    // Pull-side base filter: ROS callback only pushes raw samples into the
+    // sliding window (cheap), the control loop calls this at 50 Hz when it
+    // actually needs a base pose for the actor obs. Result is the
+    // mean-of-window already mapped through input_point_to_training /
+    // input_quat_to_training so callers don't need a second transform.
+    // Caller MUST hold ext_mtx_; the deques live behind that mutex.
+    // Returns reset defaults if the window is empty (defensive — practical
+    // path is gated upstream by ext_.has_base).
+    std::pair<Eigen::Vector3f, Eigen::Quaternionf>
+    compute_base_mean_world_locked() const;
 
     double controller_time_seconds() const;
     void observe_sim_time_stamp(const builtin_interfaces::msg::Time &stamp);
@@ -252,6 +264,11 @@ private:
     bool hit_trace_csv_enable_ = false;
     bool use_ros_header_stamp_ = true;
     bool require_base_topic_ = true;
+    // Real-robot debugging hatch (yaml: ros.enable_ball_input). When false the
+    // ball callback still records CSV + prints 1-Hz info but does NOT push to
+    // BallTrajFilter or update ext_, so planner permanently runs the fallback
+    // path = first-frame forehand waiting cmd. See ros: section in config.yaml.
+    bool ball_input_to_planner_enable_ = true;
     bool local_sim_time_active_ = false;
     bool ros_bag_record_enable_ = false;
     bool ros_bag_replay_enable_ = false;
@@ -279,6 +296,76 @@ private:
     bool hit_window_logged_ = false;
     std::ofstream hit_trace_csv_;
     std::mutex hit_trace_mtx_;
+    // Per-message ROS topic trace (one row per ball/base callback). Truncated
+    // each time Pingpong is entered so each session is self-contained. Each
+    // row is flushed immediately so Ctrl+C does not lose tail rows.
+    bool ros_trace_enable_ = true;
+    // Defaults are RELATIVE to the deploy-package root (= proj_dir, =
+    // deploy/robots/g1_23dof_pingpong). resolve_project_path prepends proj_dir
+    // unless the value is already absolute, so don't repeat the package prefix
+    // here — config.yaml may override with absolute paths if you want logs
+    // outside the package.
+    std::string ros_ball_trace_path_ = "logs/ros_ball_trace.csv";
+    std::string ros_base_trace_path_ = "logs/ros_base_trace.csv";
+    std::ofstream ros_ball_trace_csv_;
+    std::ofstream ros_base_trace_csv_;
+    std::mutex ros_ball_trace_mtx_;
+    std::mutex ros_base_trace_mtx_;
+    // Per-policy-tick motor trace: every 50 Hz tick records actor raw output
+    // + final motor q command + measured joint state, so leg jitter can be
+    // root-caused offline (actor-side instability vs motor-side tracking).
+    // yaml: logging.motor_trace_csv.{enable, output}.
+    bool motor_trace_enable_ = true;
+    std::string motor_trace_path_ = "logs/motor_trace.csv";
+    std::ofstream motor_trace_csv_;
+    std::mutex motor_trace_mtx_;
+    // Per-tick observation trace: every 50 Hz tick records the FULL 92-D
+    // actor input vector (post scale / clip / history concatenation). Use
+    // for sim-vs-real obs diff to localize OOD dimensions when the actor
+    // diverges on hardware. yaml: logging.obs_trace_csv.{enable, output}.
+    bool obs_trace_enable_ = true;
+    std::string obs_trace_path_ = "logs/obs_trace.csv";
+    std::ofstream obs_trace_csv_;
+    std::mutex obs_trace_mtx_;
+    // Joint velocity obs source. Real-robot motor encoders report dq with
+    // huge internal-estimator noise (std 1-10 rad/s when joints are static,
+    // vs ~0 in sim mujoco.qvel during training). Two choices:
+    //   "motor_dq"    : take robot_->data.joint_vel directly, then run it
+    //                   through a sliding-mean filter of size
+    //                   joint_vel_filter_window_ before exposing to obs.
+    //                   Window=10 → 100ms latency, σ-noise ~ σ_raw / sqrt(10).
+    //   "finite_diff" : compute LSQ slope of last (joint_vel_finite_diff_steps_+1)
+    //                   q samples — replaces the noisy motor.dq with a
+    //                   q-derived velocity, matches mujoco.qvel statistics.
+    std::string joint_vel_obs_source_ = "motor_dq";
+    // Sliding-mean filter window (in 50Hz samples) applied to the motor-side
+    // dq before it goes into the obs vector. window=1 disables filtering.
+    int joint_vel_filter_window_ = 10;
+    mutable std::deque<std::vector<float>> motor_dq_window_;
+    // Number of past q samples to span when finite-differencing (only used
+    // when joint_vel_obs_source_ == "finite_diff"). Larger N averages over
+    // more samples → noise floor scales like 1/N, but latency grows like
+    // N * policy_dt_ / 2.
+    int joint_vel_finite_diff_steps_ = 5;
+    mutable std::deque<std::vector<float>> joint_pos_history_for_dq_;
+    // Per-second ROS message rate counters. Both callbacks run in the same
+    // SingleThreadedExecutor, so plain int + steady_clock time_point is
+    // race-free without atomics.
+    int ball_msg_count_window_ = 0;
+    int base_msg_count_window_ = 0;
+    std::chrono::steady_clock::time_point ball_rate_window_start_{};
+    std::chrono::steady_clock::time_point base_rate_window_start_{};
+    // Sliding-mean filter for the base PoseStamped stream. Mocap publishes
+    // ~110Hz on a noisy rigid body; control runs at 50Hz. Averaging the last
+    // N samples cuts pose jitter without adding meaningful latency. Position
+    // uses arithmetic mean; quaternion uses hemisphere-aligned arithmetic mean
+    // (Markley 2007 simplified — exact when intra-window angular spread is
+    // small, which it always is at 110Hz × 5 ≈ 45ms). yaml override:
+    // ros.base_filter_window. window=1 → deque holds 1 sample → mean = sample
+    // = identical to the unfiltered code path.
+    int base_filter_window_ = 5;
+    std::deque<Eigen::Vector3f> base_pos_window_;
+    std::deque<Eigen::Quaternionf> base_quat_window_;
     int planner_max_table_bounces_before_fallback_ = 4;
     std::atomic<int> policy_loop_heartbeat_{0};
     std::atomic<double> last_policy_loop_time_s_{-1.0};
@@ -286,14 +373,18 @@ private:
     std::atomic<double> sim_time_s_{0.0};
 
     rclcpp::Node::SharedPtr ros2_node_;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr ball_sub_;
+    // VRPN-mocap publishes PoseStamped for every tracker (no twist), so the
+    // ball subscription is PoseStamped too. Velocity / acceleration are
+    // estimated by `ball_filter_` (31-frame 2nd-order polyfit, paper §IV-A).
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ball_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr base_sub_;
+    BallTrajFilter ball_filter_{31, 2, 0.4f, 0.76f, 0.02f, 0.05f, 5};
     std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> ros2_executor_;
     std::thread ros2_thread_;
     pid_t ros_bag_record_pid_ = -1;
     pid_t ros_bag_replay_pid_ = -1;
 
-    void ball_odom_cb(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void ball_pose_cb(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void base_pose_cb(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 };
 

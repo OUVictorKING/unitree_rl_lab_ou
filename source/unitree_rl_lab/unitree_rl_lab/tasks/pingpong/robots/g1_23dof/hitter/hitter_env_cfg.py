@@ -16,6 +16,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
+from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_23DOF_PADDLE_MIMIC_ACTION_SCALE
 # from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_23DOF_PADDLE_MIMIC_CFG as ROBOT_CFG
@@ -206,13 +207,25 @@ class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
         # Sensor channels routed through `randomize_imu_offset` + `comm_delay` (paper §V-B3).
+        # Noise levels (matched to mimic / locomotion velocity_env_cfg defaults):
+        #   base_ang_vel:        ±0.2  rad/s   (mimic / loco-velocity)
+        #   projected_gravity:   ±0.05         (loco-velocity; mimic skips this term)
+        #   joint_pos_rel:       ±0.01 rad     (mimic / loco-velocity)
+        #   joint_vel_rel:       ±0.5  rad/s   (mimic; loco uses ±1.5 — we pick the
+        #                                      mimic value to keep the pingpong
+        #                                      arm-tracking task closer to the
+        #                                      manipulation regime than locomotion)
+        # Critic (below) sees the SAME obs terms WITHOUT noise — clean ground
+        # truth for value estimation (privileged critic).
         base_ang_vel = ObsTerm(
             func=mdp.DelayedObservation,
             params={"inner_func": mdp.base_ang_vel_imu, "inner_params": {}},
+            noise=Unoise(n_min=-0.2, n_max=0.2),
         )
         projected_gravity = ObsTerm(
             func=mdp.DelayedObservation,
             params={"inner_func": mdp.projected_gravity_imu, "inner_params": {}},
+            noise=Unoise(n_min=-0.05, n_max=0.05),
         )
         base_yaw = ObsTerm(
             func=mdp.DelayedObservation,
@@ -237,15 +250,21 @@ class ObservationsCfg:
         joint_pos = ObsTerm(
             func=mdp.DelayedObservation,
             params={"inner_func": mdp.joint_pos_rel, "inner_params": {}},
+            noise=Unoise(n_min=-0.01, n_max=0.01),
         )
         joint_vel = ObsTerm(
             func=mdp.DelayedObservation,
             params={"inner_func": mdp.joint_vel_rel, "inner_params": {}},
+            noise=Unoise(n_min=-0.5, n_max=0.5),
         )
         last_action = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
-            self.enable_corruption = False
+            # Turn ON IsaacLab obs corruption pipeline so the `noise=` fields
+            # above actually inject Unoise samples into the actor's view.
+            # Critic (below) keeps enable_corruption=False so it sees clean
+            # ground truth for value estimation.
+            self.enable_corruption = True
             self.concatenate_terms = True
 
     @configclass
@@ -729,7 +748,7 @@ class CurriculumCfg:
         params={
             "el_phase_0_to_1": 350.0,  # Phase 0→1: EL EMA ≥ 350 (stand learned)
             "el_phase_1_to_2": 450.0,  # Phase 1→2: EL EMA ≥ 450 (imit + stand both stable)
-            "phase_1_min_iters": 2000, # FROM-SCRATCH: Phase 1 ≥2000 iter — gives the intra-Phase-1 face ramp (posture-first) room to learn distinct fh/bh postures THEN raise the face reward. Orig rationale:
+            "phase_1_min_iters": 1000, # FROM-SCRATCH: Phase 1 ≥2000 iter — gives the intra-Phase-1 face ramp (posture-first) room to learn distinct fh/bh postures THEN raise the face reward. Orig rationale:
                                        # before advancing to Phase 2. Without this,
                                        # rapid EL surge (run 15-41-23: EL 339→448 in
                                        # 100 iter) lets policy skip Phase 1 entirely,

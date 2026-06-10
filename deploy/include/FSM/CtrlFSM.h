@@ -44,6 +44,18 @@ public:
         add(create_state_(initial_state_id_));
     }
 
+    // Eagerly instantiate a state at startup instead of lazily on first
+    // transition. Use for states whose constructors need to start up
+    // long-lived resources (e.g. ROS subscribers that must finish DDS
+    // discovery before the robot ever transitions in). Idempotent: if the
+    // state is already in `states`, this is a no-op.
+    void preinstantiate_state(int state_id)
+    {
+        if (find_state_(state_id))
+            return;
+        add(create_state_(state_id));
+    }
+
     void start() 
     {
         // Start From State_Passive

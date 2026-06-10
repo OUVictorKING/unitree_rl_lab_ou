@@ -85,6 +85,41 @@ bool usable_path_value(const YAML::Node &node)
     return !value.empty() && value.rfind("REPLACE_WITH_", 0) != 0;
 }
 
+// Hemisphere-aligned arithmetic mean of unit quaternions — Markley 2007 §3
+// simplified form. Used by the base sliding-window filter.
+//
+// The exact statistical mean is the leading eigenvector of M = Σ qᵢ qᵢᵀ
+// (4×4 PSD). When intra-window angular spread is small, that eigenvector is
+// well-approximated by the hemisphere-aligned arithmetic mean: pick the first
+// quaternion as a reference, flip the sign of any subsequent qᵢ that is in
+// the opposite hemisphere (q · q_ref < 0 — same rotation, double-cover sign
+// flip), then average and renormalize. At 110 Hz × 5 ≈ 45 ms the rigid body
+// cannot rotate more than a few degrees, so this is essentially identical to
+// the eigendecomposition solution and avoids dragging in a 4×4 SVD per call.
+//
+// Returns identity if the deque is empty (defensive — base_pose_cb gates on
+// this beforehand).
+Eigen::Quaternionf quat_mean_hemisphere_aligned(const std::deque<Eigen::Quaternionf> &qs)
+{
+    if (qs.empty())
+        return Eigen::Quaternionf::Identity();
+    const Eigen::Quaternionf &q_ref = qs.front();
+    Eigen::Vector4f sum = Eigen::Vector4f::Zero();
+    for (const auto &q : qs)
+    {
+        const float dot = q_ref.w() * q.w() + q_ref.x() * q.x() + q_ref.y() * q.y() + q_ref.z() * q.z();
+        const float s = (dot < 0.0f) ? -1.0f : 1.0f;
+        sum += s * Eigen::Vector4f(q.w(), q.x(), q.y(), q.z());
+    }
+    sum /= static_cast<float>(qs.size());
+    Eigen::Quaternionf out(sum[0], sum[1], sum[2], sum[3]);
+    const float n = out.norm();
+    if (n < 1e-9f)
+        return q_ref;   // pathological cancellation (shouldn't happen with hemisphere alignment)
+    out.coeffs() /= n;
+    return out;
+}
+
 std::filesystem::path resolve_project_path(const std::string &value)
 {
     std::filesystem::path path(value);
@@ -689,8 +724,31 @@ void State_Pingpong::load_config(const YAML::Node &cfg)
         if (support_gain_sdk_ids_.size() != support_gain_kp_.size() || support_gain_sdk_ids_.size() != support_gain_kd_.size())
             throw std::runtime_error("motor_gains.support_override sdk_ids/kp/kd size mismatch.");
     }
+    // Joint velocity obs source. Real-robot motor encoders report dq with
+    // huge internal-estimator artifact (std 1-10 rad/s when joints are
+    // static, while training sim's mujoco.qvel sits at ~0). Replacing with
+    // (q[k] - q[k-1]) / policy_dt_ matches the training distribution.
+    joint_vel_obs_source_ = yaml_value<std::string>(cfg, "joint_vel_obs_source", joint_vel_obs_source_);
+    if (joint_vel_obs_source_ != "finite_diff" && joint_vel_obs_source_ != "motor_dq")
+        throw std::runtime_error("joint_vel_obs_source must be 'finite_diff' or 'motor_dq'");
+    joint_vel_finite_diff_steps_ = std::max(1, yaml_value<int>(cfg, "joint_vel_finite_diff_steps", joint_vel_finite_diff_steps_));
+    joint_vel_filter_window_ = std::max(1, yaml_value<int>(cfg, "joint_vel_filter_window", joint_vel_filter_window_));
+    spdlog::info("Pingpong joint_vel obs source: {} (finite_diff_steps={}, motor_dq_filter_window={})",
+                 joint_vel_obs_source_, joint_vel_finite_diff_steps_, joint_vel_filter_window_);
     use_ros_header_stamp_ = yaml_value<bool>(cfg["ros"], "use_header_stamp", use_ros_header_stamp_);
     require_base_topic_ = yaml_value<bool>(cfg["ros"], "require_base_topic", require_base_topic_);
+    // Real-robot debugging hatch: when false, ball PoseStamped messages are
+    // still subscribed (CSV trace + 1-Hz INFO still print so you can see mocap
+    // is alive), but the BallTrajFilter and ExternalState are NOT updated.
+    // External-state-fresh therefore reports has_ball=false, the planner
+    // permanently runs the fallback path, and the actor sees the seed-initial
+    // forehand waiting command on every step. Use this to verify the policy
+    // alone is stable before the ball is thrown.
+    ball_input_to_planner_enable_ = yaml_value<bool>(cfg["ros"], "enable_ball_input", ball_input_to_planner_enable_);
+    // Base PoseStamped sliding-window mean filter. window=1 → no filter (the
+    // window deque holds a single sample, mean = sample). See base_pose_cb for
+    // the actual averaging math.
+    base_filter_window_ = std::max(1, yaml_value<int>(cfg["ros"], "base_filter_window", base_filter_window_));
     const YAML::Node bag_record = cfg["ros"]["bag_record"];
     ros_bag_record_enable_ = yaml_value<bool>(bag_record, "enable", ros_bag_record_enable_);
     ros_bag_record_path_ = yaml_value<std::string>(bag_record, "output", ros_bag_record_path_);
@@ -710,6 +768,28 @@ void State_Pingpong::load_config(const YAML::Node &cfg)
     hit_trace_csv_enable_ = yaml_value<bool>(hit_trace_csv, "enable", hit_trace_csv_enable_);
     hit_trace_csv_path_ = yaml_value<std::string>(hit_trace_csv, "output", hit_trace_csv_path_);
     planner_hit_log_window_s_ = std::max(0.0f, planner_hit_log_window_s_);
+
+    // Per-message ROS-topic trace CSVs (one row per callback). Default-on so
+    // first Pingpong entry on a fresh deploy starts logging without yaml edit;
+    // turn off in yaml under logging.ros_topic_trace.enable: false to skip.
+    const YAML::Node ros_trace_cfg = logging["ros_topic_trace"];
+    ros_trace_enable_ = yaml_value<bool>(ros_trace_cfg, "enable", ros_trace_enable_);
+    ros_ball_trace_path_ = yaml_value<std::string>(ros_trace_cfg, "ball_output", ros_ball_trace_path_);
+    ros_base_trace_path_ = yaml_value<std::string>(ros_trace_cfg, "base_output", ros_base_trace_path_);
+
+    // Per-tick motor trace: actor raw output + final motor q + measured joint
+    // state, one row per 50 Hz policy tick. Use offline to root-cause leg
+    // jitter (actor-side instability vs motor-side tracking).
+    const YAML::Node motor_trace_cfg = logging["motor_trace_csv"];
+    motor_trace_enable_ = yaml_value<bool>(motor_trace_cfg, "enable", motor_trace_enable_);
+    motor_trace_path_ = yaml_value<std::string>(motor_trace_cfg, "output", motor_trace_path_);
+
+    // Per-tick observation trace: all 92 actor obs values (post scale/clip).
+    // Used to localize sim-vs-real OOD by per-dim diff after sim2sim and
+    // real runs.
+    const YAML::Node obs_trace_cfg = logging["obs_trace_csv"];
+    obs_trace_enable_ = yaml_value<bool>(obs_trace_cfg, "enable", obs_trace_enable_);
+    obs_trace_path_ = yaml_value<std::string>(obs_trace_cfg, "output", obs_trace_path_);
 
     spdlog::info(
         "Pingpong geometry: x_hit={:.4f}, y_mid={:.4f}, swing_sign={:.1f}, fh=[{:.3f},{:.3f}], bh=[{:.3f},{:.3f}]",
@@ -891,9 +971,15 @@ void State_Pingpong::start_ros_if_enabled(const YAML::Node &cfg)
     ball_topic_ = yaml_value<std::string>(ros_cfg, "ball_state_topic", ball_topic_);
     base_topic_ = yaml_value<std::string>(ros_cfg, "base_pose_topic", base_topic_);
 
-    auto qos = rclcpp::SensorDataQoS().keep_last(1);
-    ball_sub_ = ros2_node_->create_subscription<nav_msgs::msg::Odometry>(
-        ball_topic_, qos, [this](const nav_msgs::msg::Odometry::SharedPtr msg) { this->ball_odom_cb(msg); });
+    // VRPN bursts ~3 PoseStamped frames inside <1ms (median inter-arrival
+    // ~0.16ms), then idles ~10ms. KEEP_LAST(1) loses the leading 2 of every
+    // burst at the DDS layer, so the C++ subscribers only see ~1/3 of the
+    // packets. KEEP_LAST(50) gives the executor enough buffer to drain the
+    // burst before the next one arrives. Real frequency seen by callbacks
+    // should match `ros2 topic hz` afterwards.
+    auto qos = rclcpp::SensorDataQoS().keep_last(50);
+    ball_sub_ = ros2_node_->create_subscription<geometry_msgs::msg::PoseStamped>(
+        ball_topic_, qos, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { this->ball_pose_cb(msg); });
     base_sub_ = ros2_node_->create_subscription<geometry_msgs::msg::PoseStamped>(
         base_topic_, qos, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { this->base_pose_cb(msg); });
 
@@ -1212,6 +1298,7 @@ void State_Pingpong::enter()
         last_command_update_s_ = 0.0;
         last_raw_action_.assign(io_.action_dim, 0.0f);
         obs_history_.clear();
+        ball_filter_.reset();   // 进 state 清空 31 帧球缓冲, 避免上次的样本污染本次拟合
     }
 
     run_debug_counter_ = 0;
@@ -1243,6 +1330,134 @@ void State_Pingpong::enter()
             }
         }
     }
+    // Open the per-callback ROS topic trace CSVs (truncate on each entry so
+    // each session is self-contained; flushed every row so Ctrl+C is safe).
+    // Also reset the 1-Hz rate-print windows so each Pingpong session starts
+    // at zero (otherwise an old window from the previous entry would skew the
+    // first reported rate).
+    ball_msg_count_window_ = 0;
+    base_msg_count_window_ = 0;
+    ball_rate_window_start_ = std::chrono::steady_clock::time_point{};
+    base_rate_window_start_ = std::chrono::steady_clock::time_point{};
+    // Reset the base sliding-window filter so smoothed pose ramps up from the
+    // first sample of this entry, not stale values from the previous Pingpong.
+    base_pos_window_.clear();
+    base_quat_window_.clear();
+    // Reset finite-diff joint_vel state so the first tick of this entry
+    // returns dq=0 (instead of a stale-q-vs-current-q spike). Also reset
+    // the motor_dq sliding-mean filter so it ramps up from this entry's
+    // first sample, not from stale dq's of the previous Pingpong session.
+    joint_pos_history_for_dq_.clear();
+    motor_dq_window_.clear();
+    {
+        std::lock_guard<std::mutex> lock_b(ros_ball_trace_mtx_);
+        if (ros_ball_trace_csv_.is_open())
+            ros_ball_trace_csv_.close();
+        if (ros_trace_enable_ && !ros_ball_trace_path_.empty())
+        {
+            const auto p = resolve_project_path(ros_ball_trace_path_);
+            std::filesystem::create_directories(p.parent_path());
+            ros_ball_trace_csv_.open(p, std::ios::out | std::ios::trunc);
+            if (ros_ball_trace_csv_.is_open())
+            {
+                // Columns: receive-time + msg.header stamp + raw input-frame xyz
+                // (what the topic actually carries) + transformed training-frame
+                // xyz (what plan_once consumes via input_point_to_training).
+                // Compare these two side-by-side to spot frame/sign issues.
+                ros_ball_trace_csv_
+                    << "controller_t,recv_steady_s,stamp_s,sample_age_s,"
+                    << "raw_x,raw_y,raw_z,"
+                    << "world_x,world_y,world_z,"
+                    << "filter_n,filter_bounce_idx\n";
+                spdlog::info("Pingpong ROS ball trace CSV: {}", p.string());
+            }
+            else
+                spdlog::warn("Failed to open Pingpong ROS ball trace CSV: {}", p.string());
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock_p(ros_base_trace_mtx_);
+        if (ros_base_trace_csv_.is_open())
+            ros_base_trace_csv_.close();
+        if (ros_trace_enable_ && !ros_base_trace_path_.empty())
+        {
+            const auto p = resolve_project_path(ros_base_trace_path_);
+            std::filesystem::create_directories(p.parent_path());
+            ros_base_trace_csv_.open(p, std::ios::out | std::ios::trunc);
+            if (ros_base_trace_csv_.is_open())
+            {
+                ros_base_trace_csv_
+                    << "controller_t,recv_steady_s,stamp_s,sample_age_s,"
+                    << "raw_x,raw_y,raw_z,raw_qx,raw_qy,raw_qz,raw_qw,"
+                    << "world_x,world_y,world_z,world_qx,world_qy,world_qz,world_qw,"
+                    << "filt_x,filt_y,filt_z,filt_qx,filt_qy,filt_qz,filt_qw,"
+                    << "yaw_deg,filt_yaw_deg\n";
+                spdlog::info("Pingpong ROS base trace CSV: {}", p.string());
+            }
+            else
+                spdlog::warn("Failed to open Pingpong ROS base trace CSV: {}", p.string());
+        }
+    }
+    // Motor trace CSV: one row per 50 Hz policy tick. Wide-format, 3 metadata
+    // columns + 4 × N joint columns (raw_a, q_des, q_act, dq_act). Truncated
+    // on each Pingpong entry; flushed every row so Ctrl+C is safe.
+    {
+        std::lock_guard<std::mutex> lock_m(motor_trace_mtx_);
+        if (motor_trace_csv_.is_open())
+            motor_trace_csv_.close();
+        if (motor_trace_enable_ && !motor_trace_path_.empty())
+        {
+            const auto p = resolve_project_path(motor_trace_path_);
+            std::filesystem::create_directories(p.parent_path());
+            motor_trace_csv_.open(p, std::ios::out | std::ios::trunc);
+            if (motor_trace_csv_.is_open())
+            {
+                motor_trace_csv_ << "controller_t,t_to_hit,active";
+                // raw_a_<i>: actor's raw output BEFORE scale/offset (last_raw_action_)
+                for (int i = 0; i < io_.action_dim; ++i)
+                    motor_trace_csv_ << ",raw_a_" << i;
+                // q_des_<i>: final value written to motor_cmd[sdk_id].q() this tick
+                // — includes switch_blend / actor_blend / fallback safe targets
+                for (int i = 0; i < io_.action_dim; ++i)
+                    motor_trace_csv_ << ",q_des_" << i;
+                // q_act_<i>: latest robot_->data.joint_pos read from LowState
+                for (int i = 0; i < io_.action_dim; ++i)
+                    motor_trace_csv_ << ",q_act_" << i;
+                // dq_act_<i>: latest robot_->data.joint_vel
+                for (int i = 0; i < io_.action_dim; ++i)
+                    motor_trace_csv_ << ",dq_act_" << i;
+                motor_trace_csv_ << "\n";
+                spdlog::info("Pingpong motor trace CSV: {}", p.string());
+            }
+            else
+                spdlog::warn("Failed to open Pingpong motor trace CSV: {}", p.string());
+        }
+    }
+    // Obs trace CSV: 92 columns of actor input per 50 Hz tick. Headers are
+    // obs_0..91 — the obs term order is the same one printed at startup
+    // ("Pingpong obs order: ..."), so cross-reference there to map column
+    // index → obs semantic name.
+    {
+        std::lock_guard<std::mutex> lock_o(obs_trace_mtx_);
+        if (obs_trace_csv_.is_open())
+            obs_trace_csv_.close();
+        if (obs_trace_enable_ && !obs_trace_path_.empty())
+        {
+            const auto p = resolve_project_path(obs_trace_path_);
+            std::filesystem::create_directories(p.parent_path());
+            obs_trace_csv_.open(p, std::ios::out | std::ios::trunc);
+            if (obs_trace_csv_.is_open())
+            {
+                obs_trace_csv_ << "controller_t,t_to_hit,active";
+                for (int i = 0; i < io_.obs_dim; ++i)
+                    obs_trace_csv_ << ",obs_" << i;
+                obs_trace_csv_ << "\n";
+                spdlog::info("Pingpong obs trace CSV: {} ({} obs dims)", p.string(), io_.obs_dim);
+            }
+            else
+                spdlog::warn("Failed to open Pingpong obs trace CSV: {}", p.string());
+        }
+    }
 
     // Bag record/replay is best-effort and must not block the FSM transition.
     // Blocking here starves lowcmd updates during Velocity -> Pingpong and can
@@ -1270,6 +1485,26 @@ void State_Pingpong::exit()
         if (hit_trace_csv_.is_open())
             hit_trace_csv_.close();
     }
+    {
+        std::lock_guard<std::mutex> lock_b(ros_ball_trace_mtx_);
+        if (ros_ball_trace_csv_.is_open())
+            ros_ball_trace_csv_.close();
+    }
+    {
+        std::lock_guard<std::mutex> lock_p(ros_base_trace_mtx_);
+        if (ros_base_trace_csv_.is_open())
+            ros_base_trace_csv_.close();
+    }
+    {
+        std::lock_guard<std::mutex> lock_m(motor_trace_mtx_);
+        if (motor_trace_csv_.is_open())
+            motor_trace_csv_.close();
+    }
+    {
+        std::lock_guard<std::mutex> lock_o(obs_trace_mtx_);
+        if (obs_trace_csv_.is_open())
+            obs_trace_csv_.close();
+    }
     stop_ros_bag_tools();
     // CtrlFSM caches state objects and calls enter()/exit() repeatedly. Keep
     // ROS subscribers alive across temporary exits; otherwise a second entry
@@ -1286,6 +1521,8 @@ void State_Pingpong::run()
     bool policy_gains_applied = false;
     bool apply_policy_gains = false;
     double actor_blend_start_time = 0.0;
+    float cmd_t_to_hit_snapshot = 0.0f;
+    std::vector<float> raw_a_snapshot;
     {
         std::lock_guard<std::mutex> lock(cmd_mtx_);
         target = current_pd_target_;
@@ -1293,6 +1530,8 @@ void State_Pingpong::run()
         actor_blend_active = actor_blend_active_;
         actor_blend_start_time = actor_blend_start_time_s_;
         actor_blend_start = actor_blend_start_target_;
+        cmd_t_to_hit_snapshot = cmd_.t_to_hit;
+        raw_a_snapshot = last_raw_action_;
         if (active && !policy_gains_applied_)
         {
             policy_gains_applied_ = true;
@@ -1338,6 +1577,47 @@ void State_Pingpong::run()
             desired = actor_blend_start[i] + actor_blend * (target[i] - actor_blend_start[i]);
         const float start = (switch_start_q_.size() == static_cast<size_t>(io_.action_dim)) ? switch_start_q_[i] : desired;
         lowcmd->msg_.motor_cmd()[sdk_id].q() = start + blend * (desired - start);
+    }
+
+    // ─── Per-tick motor trace ───
+    // One row at the END of every 50 Hz tick: actor raw output + final motor q
+    // command (post blend / actor_blend / safe-target) + measured joint state.
+    // Compare q_des vs q_act offline to disambiguate jitter source:
+    //   - q_des already noisy → actor instability (or obs / cmd input noisy)
+    //   - q_des smooth, q_act noisy → motor PD tracking issue (kp/kd, latency)
+    // robot_->update() pulls the latest LowState; print_run_debug below also
+    // calls update() but only conditionally — we do it unconditionally so the
+    // CSV always has the freshest q_act sample paired with the just-written cmd.
+    if (motor_trace_enable_)
+    {
+        robot_->update();
+        std::lock_guard<std::mutex> lock_m(motor_trace_mtx_);
+        if (motor_trace_csv_.is_open())
+        {
+            motor_trace_csv_ << (now_s - start_time_s_)
+                             << "," << cmd_t_to_hit_snapshot
+                             << "," << (active ? 1 : 0);
+            // raw_a_<i>: actor's raw output BEFORE scale/offset (snapshot of last_raw_action_)
+            for (int i = 0; i < io_.action_dim; ++i)
+            {
+                const float v = (i < static_cast<int>(raw_a_snapshot.size())) ? raw_a_snapshot[i] : 0.0f;
+                motor_trace_csv_ << "," << v;
+            }
+            // q_des_<i>: final motor.q() this tick
+            for (int i = 0; i < io_.action_dim; ++i)
+            {
+                const int sdk_id = io_.joint_ids_map[i];
+                motor_trace_csv_ << "," << lowcmd->msg_.motor_cmd()[sdk_id].q();
+            }
+            // q_act_<i>: measured joint pos
+            for (int i = 0; i < io_.action_dim; ++i)
+                motor_trace_csv_ << "," << robot_->data.joint_pos[i];
+            // dq_act_<i>: measured joint vel
+            for (int i = 0; i < io_.action_dim; ++i)
+                motor_trace_csv_ << "," << robot_->data.joint_vel[i];
+            motor_trace_csv_ << "\n";
+            motor_trace_csv_.flush();
+        }
     }
 
     if (print_run_debug)
@@ -1448,6 +1728,25 @@ void State_Pingpong::policy_loop()
                 spdlog::warn("Pingpong planner inactive: waiting for the first seeded or live command.");
 
             auto obs = build_obs(state, cmd_copy);
+            // ─── Obs trace ───
+            // Record the full 92-D actor input every tick. Comparing per-dim
+            // std between sim and real localizes which obs dimensions are the
+            // OOD source when the actor diverges on hardware. Wide format,
+            // controller_t + t_to_hit + active + obs_0..(obs_dim-1).
+            if (obs_trace_enable_)
+            {
+                std::lock_guard<std::mutex> lock_o(obs_trace_mtx_);
+                if (obs_trace_csv_.is_open())
+                {
+                    obs_trace_csv_ << (t)
+                                   << "," << cmd_copy.t_to_hit
+                                   << "," << (cmd_copy.active ? 1 : 0);
+                    for (size_t i = 0; i < obs.size(); ++i)
+                        obs_trace_csv_ << "," << obs[i];
+                    obs_trace_csv_ << "\n";
+                    obs_trace_csv_.flush();
+                }
+            }
             auto raw = actor_->act({{"obs", obs}});
             if ((int)raw.size() != io_.action_dim)
                 throw std::runtime_error("Pingpong actor action dim mismatch.");
@@ -1527,7 +1826,15 @@ bool State_Pingpong::external_state_fresh(ExternalState *out) const
     if (!(ball_ok && ball_sample_ok && base_ok))
         return false;
     *out = ext_;
-    if (!out->has_base)
+    if (out->has_base)
+    {
+        // Pull-side filter: collapse the deque to a mean here, since this is
+        // the moment the policy actually consumes a base pose.
+        const auto pq = compute_base_mean_world_locked();
+        out->base_pos = pq.first;
+        out->base_quat = pq.second;
+    }
+    else
     {
         out->base_pos = reset_root_pos_;
         out->base_quat = robot_->data.root_quat_w.normalized();
@@ -1536,12 +1843,36 @@ bool State_Pingpong::external_state_fresh(ExternalState *out) const
     return true;
 }
 
+std::pair<Eigen::Vector3f, Eigen::Quaternionf>
+State_Pingpong::compute_base_mean_world_locked() const
+{
+    // Sliding-mean filter executed at the policy's request, not on every
+    // ROS callback. base_pose_cb only pushes raw samples into the deques;
+    // the actual averaging + transform happens here when the control loop
+    // pulls a state. Cheaper when ROS rate >> control rate, and keeps the
+    // mean math out of the realtime ROS callback path.
+    if (base_pos_window_.empty())
+        return { reset_root_pos_, reset_root_quat_.normalized() };
+    Eigen::Vector3f filt_xyz = Eigen::Vector3f::Zero();
+    for (const auto &p : base_pos_window_)
+        filt_xyz += p;
+    filt_xyz /= static_cast<float>(base_pos_window_.size());
+    const Eigen::Quaternionf filt_q = quat_mean_hemisphere_aligned(base_quat_window_);
+    return { input_point_to_training(filt_xyz), input_quat_to_training(filt_q) };
+}
+
 State_Pingpong::ExternalState State_Pingpong::latest_external_state_for_policy() const
 {
     ExternalState out;
     {
         std::lock_guard<std::mutex> lock(ext_mtx_);
         out = ext_;
+        if (out.has_base)
+        {
+            const auto pq = compute_base_mean_world_locked();
+            out.base_pos = pq.first;
+            out.base_quat = pq.second;
+        }
     }
 
     const auto now = std::chrono::steady_clock::now();
@@ -1781,15 +2112,26 @@ State_Pingpong::PlannerResult State_Pingpong::plan_once(const ExternalState &sta
 
     if (!state.has_ball)
         return reject_to_waiting("missing_ball_state");
-    if (!state.ball_pos.allFinite() || !state.ball_vel.allFinite())
-        return reject_to_waiting("nonfinite_ball_state");
-    if (state.ball_pos.z() < planner_min_ball_z_world_)
+
+    // Ball state from 31-frame polyfit (paper §IV-A) instead of single-frame
+    // ext_.ball_vel — VRPN-mocap doesn't give us velocity directly, and the
+    // filter both smooths position noise AND reconstructs v / a. Returns
+    // nullopt during warmup (< 3 samples) or right after a bounce that hasn't
+    // accumulated enough post-bounce samples.
+    auto est_opt = ball_filter_.estimate();
+    if (!est_opt)
+        return reject_to_waiting("filter_warmup");
+    const auto &est = *est_opt;
+
+    if (!est.p.allFinite() || !est.v.allFinite())
+        return reject_to_waiting("nonfinite_filter_estimate");
+    if (est.p.z() < planner_min_ball_z_world_)
         return reject_to_waiting("ball_below_table");
-    if (state.ball_vel.x() >= -planner_min_incoming_speed_x_)
+    if (est.v.x() >= -planner_min_incoming_speed_x_)
         return reject_to_waiting("ball_not_flying_to_robot");
 
-    Eigen::Vector3f p = state.ball_pos;
-    Eigen::Vector3f v = state.ball_vel;
+    Eigen::Vector3f p = est.p;
+    Eigen::Vector3f v = est.v;
     Eigen::Vector3f prev_p = p;
     Eigen::Vector3f prev_v = v;
     const float center_z = table_top_z_ + ball_radius_;
@@ -2014,7 +2356,71 @@ std::vector<float> State_Pingpong::build_obs_term(const std::string &name, const
         return out;
     }
     if (name == "joint_vel")
-        return std::vector<float>(robot_->data.joint_vel.data(), robot_->data.joint_vel.data() + robot_->data.joint_vel.size());
+    {
+        // motor_dq: take the encoder's reported dq and run it through a
+        // sliding-mean filter of size joint_vel_filter_window_. Real-robot
+        // encoders give std ~1-10 rad/s of internal-estimator artifact when
+        // joints are static, far outside the training distribution. Window
+        // averaging cuts that noise by ~sqrt(N): N=10 → ~3× noise reduction
+        // at the cost of ~100ms latency.
+        if (joint_vel_obs_source_ == "motor_dq")
+        {
+            std::vector<float> dq_now(robot_->data.joint_vel.data(),
+                                       robot_->data.joint_vel.data() + io_.action_dim);
+            motor_dq_window_.push_back(dq_now);
+            while (static_cast<int>(motor_dq_window_.size()) > joint_vel_filter_window_)
+                motor_dq_window_.pop_front();
+            std::vector<float> dq(io_.action_dim, 0.0f);
+            const int n = static_cast<int>(motor_dq_window_.size());
+            if (n > 0)
+            {
+                for (const auto &sample : motor_dq_window_)
+                    for (int i = 0; i < io_.action_dim; ++i)
+                        dq[i] += sample[i];
+                const float inv_n = 1.0f / static_cast<float>(n);
+                for (int i = 0; i < io_.action_dim; ++i)
+                    dq[i] *= inv_n;
+            }
+            return dq;
+        }
+
+        // finite_diff: least-squares slope across the last N samples.
+        // Given evenly-spaced (i*dt, q_i) for i = 0..n-1, the LSQ regression
+        // slope is sum((i - mean_i) * q_i) / (sum((i - mean_i)^2) * dt).
+        // For evenly-spaced indices: sum((i - mean_i)^2) = (n^3 - n) / 12.
+        // All N points participate (unlike (q_last - q_first)/((n-1)*dt)
+        // which uses only the endpoints), so the slope estimate is more
+        // robust to single-sample encoder spikes. Noise scales as
+        // ~σ_q / (dt * sqrt(sum((i-mean_i)^2))) → drops by ~1/sqrt(N^3/12).
+        std::vector<float> q_now(robot_->data.joint_pos.data(),
+                                  robot_->data.joint_pos.data() + io_.action_dim);
+        joint_pos_history_for_dq_.push_back(q_now);
+        const int max_size = joint_vel_finite_diff_steps_ + 1;
+        while (static_cast<int>(joint_pos_history_for_dq_.size()) > max_size)
+            joint_pos_history_for_dq_.pop_front();
+
+        std::vector<float> dq(io_.action_dim, 0.0f);
+        const int n = static_cast<int>(joint_pos_history_for_dq_.size());
+        if (n >= 2 && policy_dt_ > 1e-6f)
+        {
+            const float n_f = static_cast<float>(n);
+            const float mean_i = (n_f - 1.0f) * 0.5f;
+            // sum((i - mean_i)^2) for i=0..n-1 = (n^3 - n) / 12.
+            const float denom = (n_f * n_f * n_f - n_f) / 12.0f;
+            const float inv_denom_dt = 1.0f / (denom * policy_dt_);
+            for (int j = 0; j < io_.action_dim; ++j)
+            {
+                float num = 0.0f;
+                for (int i = 0; i < n; ++i)
+                {
+                    const float w = static_cast<float>(i) - mean_i;
+                    num += w * joint_pos_history_for_dq_[i][j];
+                }
+                dq[j] = num * inv_denom_dt;
+            }
+        }
+        return dq;
+    }
     if (name == "last_action")
         return last_raw_action_;
 
@@ -2663,47 +3069,211 @@ State_Pingpong::FallbackReference State_Pingpong::load_fallback_reference_from_n
     return ref;
 }
 
-void State_Pingpong::ball_odom_cb(const nav_msgs::msg::Odometry::SharedPtr msg)
+void State_Pingpong::ball_pose_cb(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
-    std::lock_guard<std::mutex> lock(ext_mtx_);
+    // VRPN-mocap publishes only PoseStamped (no twist). Velocity / acceleration
+    // are reconstructed by `ball_filter_` via 31-frame 2nd-order LSQ polyfit
+    // (paper §IV-A) — see plan_once() which reads filter.estimate() instead of
+    // ext_.ball_vel.
     const auto recv_time = std::chrono::steady_clock::now();
     observe_sim_time_stamp(msg->header.stamp);
-    ext_.ball_pos = input_point_to_training(Eigen::Vector3f(
-        msg->pose.pose.position.x,
-        msg->pose.pose.position.y,
-        msg->pose.pose.position.z));
-    ext_.ball_vel = input_vector_to_training(Eigen::Vector3f(
-        msg->twist.twist.linear.x,
-        msg->twist.twist.linear.y,
-        msg->twist.twist.linear.z));
-    ext_.has_ball = true;
-    ext_.ball_time = recv_time;
-    ext_.ball_sample_time = recv_time;
-    ext_.ball_stamp_s = stamp_seconds(msg->header.stamp);
-    if (!g_use_local_sim_time.load() && use_ros_header_stamp_ &&
-        (msg->header.stamp.sec != 0 || msg->header.stamp.nanosec != 0) && ros2_node_)
+    const Eigen::Vector3f raw_xyz(
+        msg->pose.position.x,
+        msg->pose.position.y,
+        msg->pose.position.z);
+    const Eigen::Vector3f p_world = input_point_to_training(raw_xyz);
+
+    // ── 1-Hz rate report ──
+    // Count callbacks within a rolling 1-second window so the operator can see
+    // mocap is actually delivering data and at what rate. Also dumps the latest
+    // raw + transformed sample so QoS / frame mismatch are caught immediately.
+    if (ros2_node_)
     {
-        const double age_s = std::max(0.0, (ros2_node_->now() - rclcpp::Time(msg->header.stamp)).seconds());
-        ext_.ball_sample_time = recv_time - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                                                std::chrono::duration<double>(age_s));
+        ball_msg_count_window_ += 1;
+        if (ball_rate_window_start_.time_since_epoch().count() == 0)
+            ball_rate_window_start_ = recv_time;
+        const double window_s =
+            std::chrono::duration<double>(recv_time - ball_rate_window_start_).count();
+        if (window_s >= 1.0)
+        {
+            RCLCPP_INFO(ros2_node_->get_logger(),
+                        "[ball %s] %d msg in %.3fs (~%.1f Hz)  raw=(%+.3f, %+.3f, %+.3f)  world=(%+.3f, %+.3f, %+.3f)",
+                        ball_topic_.c_str(),
+                        ball_msg_count_window_,
+                        window_s,
+                        static_cast<double>(ball_msg_count_window_) / window_s,
+                        raw_xyz.x(), raw_xyz.y(), raw_xyz.z(),
+                        p_world.x(), p_world.y(), p_world.z());
+            ball_msg_count_window_ = 0;
+            ball_rate_window_start_ = recv_time;
+        }
+    }
+
+    // ─── Per-message ROS topic trace ───
+    // Persist the raw input-frame position the topic actually carries AND the
+    // training-world position our planner consumes. Compare row-by-row vs
+    // `ros2 topic echo` to verify (a) frame transform sign, (b) units, and
+    // (c) timestamp alignment with the controller wall-clock. Always written
+    // (even when ball_input_to_planner_enable_=false) — this is diagnostic and
+    // independent of whether the planner is consuming the ball.
+    if (ros_trace_enable_)
+    {
+        std::lock_guard<std::mutex> lock(ros_ball_trace_mtx_);
+        if (ros_ball_trace_csv_.is_open())
+        {
+            const double ctrl_t = controller_time_seconds();
+            const double recv_s = std::chrono::duration<double>(recv_time.time_since_epoch()).count();
+            const double stamp_s = stamp_seconds(msg->header.stamp);
+            double sample_age = 0.0;
+            if (ros2_node_ && (msg->header.stamp.sec != 0 || msg->header.stamp.nanosec != 0))
+                sample_age = std::max(0.0, (ros2_node_->now() - rclcpp::Time(msg->header.stamp)).seconds());
+            ros_ball_trace_csv_
+                << ctrl_t << "," << recv_s << "," << stamp_s << "," << sample_age << ","
+                << raw_xyz.x() << "," << raw_xyz.y() << "," << raw_xyz.z() << ","
+                << p_world.x() << "," << p_world.y() << "," << p_world.z() << ","
+                << ball_filter_.sample_count() << ","
+                << ball_filter_.last_bounce_index() << "\n";
+            ros_ball_trace_csv_.flush();   // Ctrl+C-safe: tail row never lost
+        }
+    }
+
+    // Push to filter (thread-safe, has its own mutex).
+    // ── Real-robot debug switch ──
+    // When ros.enable_ball_input=false in config.yaml, we DO NOT touch the
+    // BallTrajFilter or ExternalState. The planner therefore sees has_ball=false
+    // every step and stays on the seed-initial forehand waiting command — i.e.
+    // the actor is exercised purely against the first-frame cmd, with no live
+    // ball coupling. CSV trace + 1-Hz INFO above are still emitted so you can
+    // confirm mocap is alive while the planner is gated off.
+    if (!ball_input_to_planner_enable_)
+        return;
+
+    ball_filter_.push_sample(recv_time, p_world);
+
+    // Update ext_ with the latest position so the rest of the code (waiting
+    // logic, sample-age computation) keeps working unchanged. ext_.ball_vel
+    // is left at zero — plan_once now reads v from the filter.
+    {
+        std::lock_guard<std::mutex> lock(ext_mtx_);
+        ext_.ball_pos = p_world;
+        ext_.ball_vel = Eigen::Vector3f::Zero();
+        ext_.has_ball = true;
+        ext_.ball_time = recv_time;
+        ext_.ball_sample_time = recv_time;
+        ext_.ball_stamp_s = stamp_seconds(msg->header.stamp);
+        if (!g_use_local_sim_time.load() && use_ros_header_stamp_ &&
+            (msg->header.stamp.sec != 0 || msg->header.stamp.nanosec != 0) && ros2_node_)
+        {
+            const double age_s = std::max(0.0, (ros2_node_->now() - rclcpp::Time(msg->header.stamp)).seconds());
+            ext_.ball_sample_time = recv_time - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                                    std::chrono::duration<double>(age_s));
+        }
     }
 }
 
 void State_Pingpong::base_pose_cb(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
-    std::lock_guard<std::mutex> lock(ext_mtx_);
-    observe_sim_time_stamp(msg->header.stamp);
-    ext_.base_pos = input_point_to_training(Eigen::Vector3f(
-        msg->pose.position.x,
-        msg->pose.position.y,
-        msg->pose.position.z));
-    ext_.base_quat = input_quat_to_training(Eigen::Quaternionf(
-                         msg->pose.orientation.w,
-                         msg->pose.orientation.x,
-                         msg->pose.orientation.y,
-                         msg->pose.orientation.z)
-                         .normalized());
-    ext_.has_base = true;
-    ext_.base_time = std::chrono::steady_clock::now();
-    ext_.base_stamp_s = stamp_seconds(msg->header.stamp);
+    const auto recv_time = std::chrono::steady_clock::now();
+    const Eigen::Vector3f raw_xyz(msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
+    const Eigen::Quaternionf raw_q(
+        msg->pose.orientation.w,
+        msg->pose.orientation.x,
+        msg->pose.orientation.y,
+        msg->pose.orientation.z);
+    const Eigen::Quaternionf raw_q_normed = raw_q.normalized();
+
+    // Single-sample world frame for 1-Hz INFO + CSV — purely diagnostic, NOT
+    // what the actor observes. The smoothed pose is computed pull-side by
+    // compute_base_mean_world_locked() when the control loop asks for state.
+    const Eigen::Vector3f world_xyz_now = input_point_to_training(raw_xyz);
+    const Eigen::Quaternionf world_q_now = input_quat_to_training(raw_q_normed);
+
+    // ── Pull-side push: only enqueue + bump metadata under ext_mtx_. The
+    // control loop (50 Hz) takes the same lock to read the deque and compute
+    // the mean. ROS rate >> control rate, so doing the mean once per control
+    // tick instead of once per ROS callback is materially cheaper.
+    //
+    // Exception: while we already hold ext_mtx_ here, we ALSO compute the
+    // deque mean once and copy it out — purely so the CSV trace can record
+    // both the unfiltered single-sample (`world_*`) and the smoothed
+    // actor-input (`filt_*`) on the same row. The actor still gets its mean
+    // pull-side via compute_base_mean_world_locked().
+    Eigen::Vector3f filt_xyz_world;
+    Eigen::Quaternionf filt_q_world;
+    {
+        std::lock_guard<std::mutex> lock(ext_mtx_);
+        observe_sim_time_stamp(msg->header.stamp);
+        base_pos_window_.push_back(raw_xyz);
+        base_quat_window_.push_back(raw_q_normed);
+        while (static_cast<int>(base_pos_window_.size()) > base_filter_window_)
+            base_pos_window_.pop_front();
+        while (static_cast<int>(base_quat_window_.size()) > base_filter_window_)
+            base_quat_window_.pop_front();
+        ext_.has_base = true;
+        ext_.base_time = recv_time;
+        ext_.base_stamp_s = stamp_seconds(msg->header.stamp);
+        // Note: ext_.base_pos / ext_.base_quat are NOT written here. They are
+        // overwritten with the deque mean on every external_state_fresh() /
+        // latest_external_state_for_policy() call.
+        const auto pq = compute_base_mean_world_locked();
+        filt_xyz_world = pq.first;
+        filt_q_world = pq.second;
+    }
+
+    // ── 1-Hz rate report ── (mirror of ball_pose_cb; same SingleThreadedExecutor)
+    if (ros2_node_)
+    {
+        base_msg_count_window_ += 1;
+        if (base_rate_window_start_.time_since_epoch().count() == 0)
+            base_rate_window_start_ = recv_time;
+        const double window_s =
+            std::chrono::duration<double>(recv_time - base_rate_window_start_).count();
+        if (window_s >= 1.0)
+        {
+            const float yaw_deg = yaw_from_quat(world_q_now) * 180.0f / static_cast<float>(M_PI);
+            RCLCPP_INFO(ros2_node_->get_logger(),
+                        "[base %s] %d msg in %.3fs (~%.1f Hz)  raw=(%+.3f, %+.3f, %+.3f)  world=(%+.3f, %+.3f, %+.3f)  yaw=%+.1f°",
+                        base_topic_.c_str(),
+                        base_msg_count_window_,
+                        window_s,
+                        static_cast<double>(base_msg_count_window_) / window_s,
+                        raw_xyz.x(), raw_xyz.y(), raw_xyz.z(),
+                        world_xyz_now.x(), world_xyz_now.y(), world_xyz_now.z(),
+                        yaw_deg);
+            base_msg_count_window_ = 0;
+            base_rate_window_start_ = recv_time;
+        }
+    }
+
+    // ─── Per-message ROS topic trace ───
+    // Records the SINGLE-SAMPLE raw + transform(raw). Diagnostic — does not
+    // reflect the smoothed pose the actor sees. Compare consecutive rows to
+    // see mocap-side jitter; the filter's effect lives in the actor obs.
+    if (ros_trace_enable_)
+    {
+        std::lock_guard<std::mutex> lock(ros_base_trace_mtx_);
+        if (ros_base_trace_csv_.is_open())
+        {
+            const double ctrl_t = controller_time_seconds();
+            const double recv_s = std::chrono::duration<double>(recv_time.time_since_epoch()).count();
+            const double stamp_s = stamp_seconds(msg->header.stamp);
+            double sample_age = 0.0;
+            if (ros2_node_ && (msg->header.stamp.sec != 0 || msg->header.stamp.nanosec != 0))
+                sample_age = std::max(0.0, (ros2_node_->now() - rclcpp::Time(msg->header.stamp)).seconds());
+            const float yaw_deg = yaw_from_quat(world_q_now) * 180.0f / static_cast<float>(M_PI);
+            const float filt_yaw_deg = yaw_from_quat(filt_q_world) * 180.0f / static_cast<float>(M_PI);
+            ros_base_trace_csv_
+                << ctrl_t << "," << recv_s << "," << stamp_s << "," << sample_age << ","
+                << raw_xyz.x() << "," << raw_xyz.y() << "," << raw_xyz.z() << ","
+                << msg->pose.orientation.x << "," << msg->pose.orientation.y << ","
+                << msg->pose.orientation.z << "," << msg->pose.orientation.w << ","
+                << world_xyz_now.x() << "," << world_xyz_now.y() << "," << world_xyz_now.z() << ","
+                << world_q_now.x() << "," << world_q_now.y() << "," << world_q_now.z() << "," << world_q_now.w() << ","
+                << filt_xyz_world.x() << "," << filt_xyz_world.y() << "," << filt_xyz_world.z() << ","
+                << filt_q_world.x() << "," << filt_q_world.y() << "," << filt_q_world.z() << "," << filt_q_world.w() << ","
+                << yaw_deg << "," << filt_yaw_deg << "\n";
+            ros_base_trace_csv_.flush();
+        }
+    }
 }
+

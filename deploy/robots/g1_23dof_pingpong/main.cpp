@@ -76,6 +76,23 @@ int main(int argc, char** argv)
     
     // Initialize FSM
     auto fsm = std::make_unique<CtrlFSM>(param::config["FSM"]);
+
+    // Pre-instantiate Pingpong now (instead of lazy on first transition) so
+    // its ROS subscribers (mocap base/ball) start their DDS discovery during
+    // boot. Without this the first ~2-3 s after entering Pingpong have
+    // ext_.has_base = false (subscribers still discovering publishers), and
+    // the seed-initial cmd is computed against reset_root_pos rather than
+    // the live mocap base — which puts the actor in a sharply OOD state.
+    // See State_Pingpong ctor → start_ros_if_enabled. The id 10 must match
+    // FSM.Pingpong.id in config.yaml.
+    try {
+        const int pingpong_id = 10;
+        fsm->preinstantiate_state(pingpong_id);
+        spdlog::info("Pingpong state pre-instantiated; ROS mocap subscribers running ahead of first transition.");
+    } catch (const std::exception &e) {
+        spdlog::warn("Pingpong pre-instantiation failed (will fall back to lazy init): {}", e.what());
+    }
+
     fsm->start();
 
     std::cout << "Press [L2 + Up] to enter FixStand mode.\n";

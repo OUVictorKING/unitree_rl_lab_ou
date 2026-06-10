@@ -270,3 +270,73 @@ iter 8000-15000: hsr 0.50+，cos_sim 0.50+，paddle_y_base 正反手分别接近
 - **`final.md §19` / 依赖清单**：当前权威 clip 路径为 `motion_datasets/.../expert/new_new/{forward,backward}/npz/{forward_001,backward_001}_rotated.npz`。
 - **23dof 当前 `imitation_joint_names`**：v63 起在 [hitter_env_cfg.py CommandsCfg](robots/g1_23dof/hitter/hitter_env_cfg.py) override 为**全 11 个上半身关节**(含右臂 distal),`tracked_body_names` 保持 8 不变。
 - **`target_land`**：(2.45, 0, 0.78) = 对方半台正中心(球台中心 1.77→远边 3.14 中点 2.455,差 0.5cm;y=0 中线;z=台面 0.76+球半径 0.02)。已确认无误。
+
+---
+
+## 十七、Sim2Real 部署诊断 (2026-06-09 → 2026-06-10)
+
+**Sim2sim 稳, 真机 cmd 冻结模式仍腿/腕剧烈抖动**：sim 中机器人静止 actor `raw_a Δstd ~0.008`；真机同样 `enable_ball_input=false` (cmd 永远 = make_waiting_command 第一帧, t_to_hit 衰到 -0.5)，`raw_a Δstd ~0.29`，**两者差 36 倍**。诊断链如下表。所有 deploy-side 修复都在 [`deploy/robots/g1_23dof_pingpong/`](../../../deploy/robots/g1_23dof_pingpong/)，训练侧改动在 [hitter_env_cfg.py](robots/g1_23dof/hitter/hitter_env_cfg.py)。
+
+### 17.1 ROS / Mocap 数据通路问题
+
+| # | 问题 | 触发现象 | 根因 | 方案 | 验证 | 状态 |
+|---|---|---|---|---|---|---|
+| **D1** | VRPN topic 名错配 | C++ 订阅 `/pingpong/ball_state`, `/pingpong/base_pose`，但 VRPN-mocap 在发 `/vrpn_mocap/U_Tracker0/pose`, `/vrpn_mocap/g1/pose`，0 帧进 callback | sim 端旧 topic 名遗留；真机 VRPN 用自己默认前缀 | config.yaml `ros.ball_state_topic / base_pose_topic` 改成 `/vrpn_mocap/...`；message type 由 `Odometry` 改 `PoseStamped` (VRPN 不发 twist)；同步把 sim 端 [unitree_pingpong_mujoco.py](../../../../../unitree_mujoco/simulate_python_pingpong/unitree_pingpong_mujoco.py) 的 publisher 类型也改 PoseStamped + sensor_data QoS | 终端 1Hz INFO 出现 `[ball ...] ~300 msg/s`、`[base ...] ~300 msg/s` | 🟢 |
+| **D2** | C++ DDS QoS `keep_last(1)` 在 VRPN burst-send 下丢 2/3 包 | `ros2 topic hz` 实测 ~292Hz, 但 C++ ros_base_trace.csv 录到 ~96Hz, 比例正好 1/3 | VRPN 把多帧打包 burst (median inter-arrival 0.16ms, max 50ms idle), `KEEP_LAST(1)` buffer 太小, 来一帧 burst 第二第三帧到来时第一帧已被覆盖丢弃 | `auto qos = SensorDataQoS().keep_last(50)` (deploy `start_ros_if_enabled`)；执行器有足够 buffer 漏空一次 burst | C++ csv 频率 96Hz → **300Hz**, 跟 monitor 吻合 | 🟢 |
+| **D3** | DDS discovery delay → 进 Pingpong 头 ~2.88 秒 base 一帧没收 | 第一次进 Pingpong 时 `Pingpong ROS2 Humble subscribers started` 才打印 (= subscribers 那时才创建), 头几秒 ext_.has_base=false → fallback path 用 `reset_root_pos = (-0.138, 0, 0.74)` 算 cmd, **此时 mocap 实际 base 跟 reset 差几十厘米 + yaw 几十度**, 严重 OOD | CtrlFSM lazy init: state ctor 只在第一次切到该 state 时调；start_ros_if_enabled 在 ctor 里, 跟 enter() 同时刻才真正订阅 | 加 `CtrlFSM::preinstantiate_state(int)` (idempotent)；main.cpp 在 `fsm->start()` 之前调 `preinstantiate_state(10)` 让 Pingpong state 启动时就实例化, ROS subscribers 早 2-3 秒做完 DDS discovery | 启动 log 里 `Pingpong ROS2 Humble subscribers started` 在 main 里就打印；进 Pingpong 后 csv 第一行 controller_t = 0.000s 就有数据 | 🟢 |
+| **D4** | csv 路径相对路径双拼 | C++ 默认 `deploy/robots/g1_23dof_pingpong/logs/...`, `resolve_project_path` 又 prepend `proj_dir = deploy/robots/g1_23dof_pingpong/` → 写到 `deploy/robots/g1_23dof_pingpong/deploy/robots/g1_23dof_pingpong/logs/...` 双拼 | `proj_dir` 是包根不是仓库根；默认值假设错 | C++ 默认改 `logs/ros_*_trace.csv` 包内相对；config.yaml 里给绝对路径覆盖 | 跑后 `logs/` 一级目录有 csv | 🟢 |
+
+### 17.2 Cmd 生成几何 + 滤波
+
+| # | 问题 | 触发现象 | 根因 | 方案 | 验证 | 状态 |
+|---|---|---|---|---|---|---|
+| **D5** | 第一帧 cmd 永远基于 reset_root_pos, 即使 mocap 后到也不重算 | `enable_ball_input=false` 模式下：第一个 50Hz tick (t=0.020s) 因 `has_ball=false` 走 fallback → `make_waiting_command(state, ...)`; 但此刻 ext_.has_base 也 false → state.base = reset_root_pos. 之后 mocap 来了 has_base=true, 但 update_command 看到 `has_previous_cmd=true` → 直接复用上一帧 cmd 几何, 不重算 | hold_previous_or_seed_initial_command 设计：fallback path 内, has_previous_cmd → 复用 cmd_, 不重新调 make_waiting_command | D3 把 subscribers 提前到程序启动 → 进 Pingpong 时 ext_.has_base 已 true → 第一帧 make_waiting_command 直接用真实 mocap base | csv `world_*` mean 跟 mocap 实测对齐 | 🟢 |
+| **D6** | base mocap z origin 标定偏 0.08m | csv `world_z mean = 0.661` (训练 reset z = 0.74, 偏 -0.08) | config.yaml `input_frame.origin_in_training_world = (1.77, 0, 0.735)` 是从训练 sim table center 直接复制, 没考虑真机 mocap 原点 z 偏移 | 改成 `(1.77, 0, 0.815)` (= 0.74 - raw_z_mean(-0.064)). 校准方法写进 yaml 注释 | 改后 csv `world_z mean = 0.758` (target ~0.74, 仍偏 +0.018, 接受) | 🟢 |
+| **D7** | base mocap 滤波: push-side mean → pull-side mean (对应 D8 quat 半球均值) | mocap 110-300Hz, 控制 50Hz, 不滤波则 actor 看每帧 jitter | (a) 高频 mocap 信号需要平滑；(b) push-side (callback 里算) 浪费算力, ROS 频率 ≫ 控制频率 | 加 `compute_base_mean_world_locked()` helper：callback 只 push deque + 写时间戳；control loop pull 时算 sample-count 滑窗均值 (default window=5)。Quaternion mean 用 hemisphere-aligned 简化 Markley (小角度差等价于 SVD 解, 110Hz×5=45ms 内不可能转过几度). yaml: `ros.base_filter_window: 5` | csv 加 `filt_*` 列, raw vs filt 对比 yaw Δstd 0.378° → 0.100° (4× 缩减), z Δstd 0.0008m → 0.0005m | 🟢 |
+| **D8** | quat 简单算术平均 → 数值崩溃 | quaternion 两半球 (q 和 -q 同一旋转, double cover), 直接平均会 cancel | hemisphere-align: 所有 q_i 跟 q_ref dot < 0 时翻号, 再平均, 再 normalize. 等价 SVD 主特征向量解在小角度差时 | [State_Pingpong.cpp `quat_mean_hemisphere_aligned()`](../../../../../deploy/robots/g1_23dof_pingpong/src/State_Pingpong.cpp) | 算法层面验证 (单元测试两个 (id, -id, id) 输入返回 (0,0,0,1)) | 🟢 |
+
+### 17.3 Actor 抖动 — sensor 高频噪声 OOD (核心问题)
+
+| # | 问题 | 触发现象 | 根因 | 方案 | 验证 | 状态 |
+|---|---|---|---|---|---|---|
+| **D9** | obs_trace.csv 暴露真机 sensor 高频噪声 | cmd 冻结+机器人静止站立, q_act std=0.001 (机器人真不动), 但：<br>obs_46..68 (joint_vel = motor.dq) Δstd **mean 2.66, max 10 rad/s**(R_wrist)<br>obs_0..2 (base_ang_vel = IMU gyro) Δstd **mean 0.62, max 0.82 rad/s** (range ±3.6)<br>训练 sim 静止时这两组 Δstd ≈ 0 | (a) **motor encoder 内部速度估计器 artifact**：Unitree G1 motor controller 输出的 dq 是 short-window finite-diff + estimator filter, 静止时 std 0.5-2 rad/s, 腕关节小电机更糟 ±10 rad/s<br>(b) **MEMS IMU gyro 静态噪声**：典型 ±0.05 rad/s 高频 + 5-10° tilt 后投影偏差<br>(c) **训练分布外 100×**, actor 看到的 obs[joint_vel] / obs[base_ang_vel] 完全 OOD → 输出乱 → 反馈到下一帧 last_action obs → 自激震荡 | 加 `obs_trace.csv` (92 维 actor 输入 wide-format)、`motor_trace.csv` (raw_a + q_des + q_act + dq_act) trace 工具；离线 pandas 算 per-dim Δstd 直接定位 OOD 维度 | obs[46..68] 真机 std 2.66, sim 0；obs[0..2] 真机 std 0.62, sim 0；定位完成 | 🟢 |
+| **D10** | 训练 EventCfg 没 sensor 高频噪声 randomization | `randomize_imu_offset` 是 startup 模式 episode-level **静态 ±2°** offset (= IMU 校准误差模拟), 没有 per-step 高频噪声; `randomize_comm_delay` 也是 startup 0-1 step (= 0-20ms) 静态延迟。**没有 joint_pos / joint_vel / IMU gyro / IMU accel 的 per-step Unoise 注入** | actor 训练时 obs 完美 (mujoco.qvel ≈ 0, IMU gyro 静止 ≈ 0), 部署时被高频噪声打脸 | (a) PolicyCfg 4 个 sensor obs 加 `noise=Unoise(...)` (mimic / locomotion 标准值): `base_ang_vel ±0.2`, `projected_gravity ±0.05`, `joint_pos_rel ±0.01`, `joint_vel_rel ±0.5`<br>(b) `enable_corruption = True` (打开 IsaacLab corruption 管道, 否则 noise= 不生效)<br>(c) Critic 保持 `enable_corruption = False` + 各 obs term 不写 noise → 看清洁 ground truth (privileged value estimation)<br>([hitter_env_cfg.py PolicyCfg](robots/g1_23dof/hitter/hitter_env_cfg.py)) | 待重训验证；预期 actor 训练时见过 ±0.5 rad/s joint_vel 噪声 → deploy 时对真机 motor.dq 噪声鲁棒 | ⚪ |
+| **D11** | Deploy 端短期 fix (训练完成前): `joint_vel` obs 改用 q 的 finite-diff(N) | motor.dq 噪声 1-10 rad/s, 但 q 编码器 std ~0.001 rad. `dq = (q[k]-q[k-1])/dt` → ~0.05 rad/s, 比 motor.dq 干净 100×。LSQ slope on N samples 噪声进一步 ÷ √(N³/12). N=5 latency 50ms (训练 delay 上限 20ms, 偏多但比 motor.dq 好得多) | motor controller 内部估计器对静止状态的速度估计有 quantization + estimator artifact, 但 q 自己 quantization 小 | (a) build_obs_term("joint_vel") 加 `joint_vel_obs_source: motor_dq | finite_diff` 切换 yaml; (b) finite_diff 路径用 LSQ slope 公式 `dq = Σᵢ(i-mean_i)·q[i] / ((n³-n)/12·dt)`, 全 N 个点参与, 抗 outlier; (c) motor_dq 路径加 sliding mean filter window=10 (用户当前选用) | 1-step finite-diff: obs joint_vel Δstd 2.66 → 0.69 (3.9×↓), raw_a Δstd 0.29 → 0.107 (2.7×↓). LSQ N=5 进一步降; motor_dq+window=10 latency 100ms 但用户接受 | 🟡 (短期 fix；D10 重训完后可关) |
+
+### 17.4 走过的弯路
+
+| # | 错误判断 | 反驳证据 | 修正 |
+|---|---|---|---|
+| **W19** | "base_yaw 训练用 IMU(`base_yaw_encoding_imu`), 部署用 mocap → yaw 来源不一致是 actor 抖根因" | sim2sim (sim 端 base_yaw 也走 mocap 等价) actor 完全稳定；用户主动澄清"IMU 没磁力计, 不能给可靠 yaw, 故意改用 mocap" | mocap base_yaw 是 deliberate 工程决定。yaw 数值 sim/real 接近 (12° vs 16°), 不是抖动根因。撤回嫌疑 |
+| **W20** | "Pingpong 0.96s 退到 Passive 是 actor 失控自动 fallback" | 用户解释：是手动按 Y 关停的, "看到策略失控了手动关掉" | Pingpong → Passive 唯一路径是 Y.on_pressed; 是 user 干预, 不是策略 bug。要看实际策略行为需要让它跑久 |
+| **W21** | "球频率从监测 292Hz 掉到 csv 95Hz 是 mocap 软件 occlude" | 跟 base 对照：base 在两次跑里频率从 95Hz → 300Hz, 唯一改动是 `keep_last(1) → keep_last(50)`. mocap 端没动 | 频率丢失全部出在 C++ 接收端 DDS QoS, 不是 mocap (D2) |
+| **W22** | "fusion 的 obs 实现就是 pingpong 的参考, 我们应该完全跟它一致" | 用户：fusion 是 mimic task 的 obs, pingpong 自己有专门的 obs term (active_face / hit_pos / target_normal 等), 不能直接照搬 | 对照标准应该是 pingpong 训练 [hitter_env_cfg.py PolicyCfg](robots/g1_23dof/hitter/hitter_env_cfg.py), 不是 fusion. 改去看 obs term name → DelayedObservation wrapper → inner_func, 找到训练时 actor 真正看到的 obs |
+
+### 17.5 Deploy 端新增诊断工具 (留档)
+
+部署阶段加的所有 csv trace + 监测都在 [deploy/robots/g1_23dof_pingpong/](../../../../../deploy/robots/g1_23dof_pingpong/), config.yaml `Pingpong.logging` 块控制开关：
+
+| 工具 | 文件 | 作用 |
+|---|---|---|
+| `ros_ball_trace.csv` / `ros_base_trace.csv` | logs/ | 每个 ROS callback 写一行 (raw + transform + filt), 跟 `ros2 topic echo` 对比 frame / unit / sign / timestamp |
+| `motor_trace.csv` | logs/ | 50Hz 一行: actor raw_a + final motor.q (含 blend) + measured q_act + dq_act, 23 关节 |
+| `obs_trace.csv` | logs/ | 50Hz 一行: 全 92 维 actor 输入 (post scale/clip), sim/real 对比定位 OOD 维度 |
+| 1Hz `[ball ...]` / `[base ...]` INFO | terminal | callback 频率 + 单帧 raw + transform 瞬时值, 诊断 mocap 是否在线 + transform 是否对 |
+| `inspect_pose_live.py --topic` | python | rclpy + matplotlib 画 raw vs filtered (虚线) 对比, 实时看滤波效果 + mocap 抖动 |
+
+### 17.6 Sim 端同步改动 (sim2sim → C++ 接口完全对齐 mocap)
+
+[unitree_mujoco/simulate_python_pingpong/](../../../../../unitree_mujoco/simulate_python_pingpong/) 改三处使 sim 跟真机 VRPN 完全对齐, C++ 控制器无法分辨 sim publisher 还是真 mocap:
+- `config.py`: `INPUT_FRAME_ID = "world"`, `BALL_STATE_TOPIC = /vrpn_mocap/U_Tracker0/pose`, `BASE_POSE_TOPIC = /vrpn_mocap/g1/pose`, `INPUT_ORIGIN_IN_TRAINING_WORLD = (1.77, 0, 0.815)` (跟 deploy 校准一致)
+- `unitree_pingpong_mujoco.py Ros2Publisher`: ball publisher 类型 `Odometry` → `PoseStamped` (VRPN 不发 twist；C++ BallTrajFilter 从 PoseStamped 序列重建 v); QoS `default(RELIABLE, depth=10)` → `qos_profile_sensor_data` (BEST_EFFORT + KEEP_LAST(5) + VOLATILE)
+
+跑 sim 前先 `mv logs logs_sim_<ts>` 备份, 防止 sim/real 同样 csv 路径互相覆盖。
+
+### 17.7 关键判读约定
+
+- **Actor 抖动来源判读** (用 motor_trace + obs_trace):
+  - `q_des Δstd 大 + q_act Δstd 小`：策略输出抖, 电机 PD 滤掉了 → actor / obs 问题, 不是电机
+  - `q_des Δstd 小 + q_act Δstd 大`：策略平滑但电机跟不上 → 电机 / 通信延迟问题
+  - `obs_X Δstd ≫ obs_X_sim Δstd`：第 X 维 OOD, 元凶维度
+- **frequency 损失判读**：先 `ros2 topic hz --qos-profile sensor_data <topic>` 确认 publisher 真实频率, 再看 csv 实际频率, 差距来自 C++ 订阅端 DDS QoS / executor latency, 不是 mocap
+- **mocap origin 校准**：让机器人 FixStand 静止录 1s base csv, `origin_z = 0.74 - mean(raw_z)`. 公式同样套到 origin_x/y (但通常 x=1.77, y=0 跟桌面中心一致, 不需校)
