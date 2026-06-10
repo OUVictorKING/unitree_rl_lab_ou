@@ -1,0 +1,377 @@
+deploy/robots/g1_29dof/src/State_Mimic.cpp
+  ai_agent 37
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/__init__.py
+  ai_agent 1-48
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/features/__init__.py
+  ai_agent 1-35
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/final_v57_changes.md
+  s_e121cebe924639::t_8883b799183d83 1-96,98-124,126-139,141-800
+  s_e121cebe924639::t_729cc90aa4ef23 801-1129
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/agents/rsl_rl_ppo_cfg.py
+  ai_agent 7-11,16-20,36-37
+.gitignore
+  s_9b61f2e639d8c8::t_683e2c54528549 35-38
+  s_9b61f2e639d8c8::t_f016fde64837e4 79-106
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/robots/g1/29dof/__init__.py
+  ai_agent 1-63
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/agents/rsl_rl_ppo_cfg.py
+  h_b23a6a8439c0dd 1-4,6-11,15-43
+  s_262bd5c185f175::t_8a35f9a171855c 5,12-14
+scripts/pingpong_data_process/select_x04_clips.py
+  s_e121cebe924639::t_6fa936fc669f33 1-104
+scripts/pingpong_data_process/run_all_new.sh
+  s_e121cebe924639::t_0a2a322c35b893 1-154
+scripts/rsl_rl/export_policy.py
+  ai_agent 1-376
+scripts/rsl_rl/checkpoint_compat.py
+  s_262bd5c185f175::t_6d2253825cc34c 1-137,150-160,198-347
+  s_262bd5c185f175::t_4ab60d671cd14c 138-149,161-197
+source/unitree_rl_lab/unitree_rl_lab/utils/amp_data_tools/replay_23dof_npz.py
+  ai_agent 1-220
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/algorithms/amp_ppo.py
+  ai_agent 1-819
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_23dof/dance_102/__init__.py
+  ai_agent 1-12
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/mdp/observations.py
+  ai_agent 1-31
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/commands.py
+  s_262bd5c185f175::t_c8ba9e10e983d7 237
+  s_262bd5c185f175::t_d377e9ce150b86 204-206
+  s_262bd5c185f175::t_719afed3829669 568
+  s_262bd5c185f175::t_0e77fc41855314 233
+  s_2b2d2751205319::t_d6d7eeac738d72 574
+  s_262bd5c185f175::t_a7f8835aae7d8b 569-570
+  s_262bd5c185f175::t_837c1837c299ba 129,224,469-471,482
+  s_262bd5c185f175::t_6d0899c73e4be3 227,234-236
+  s_262bd5c185f175::t_fd95297f8782d4 244-245,272-280,361,369
+  s_2b2d2751205319::t_60db191777fc20 300-302
+  s_262bd5c185f175::t_ebc7d16e25fbab 228-232,238
+  s_262bd5c185f175::t_d485ccfb11953b 1-12,15,20-127,133-147,149-203,207-222,226,239-243,246-271,281-299,303-312,314-360,362-368,370-443,452-468,472-481,483-490,494-495,504-505,528-567,571-573,575-577,580-592
+  s_262bd5c185f175::t_d516680b2271db 16-19
+  s_262bd5c185f175::t_0347ce6817afe4 128,130-132,148,223,225,444-451,491-493,519-526,579
+  s_262bd5c185f175::t_d154c8110d974b 13-14,496-503,506-518,527
+  s_262bd5c185f175::t_e1751140aee9b8 313,578
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/modules/__init__.py
+  ai_agent 1-7
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_29dof/gangnanm_style/tracking_env_cfg.py
+  ai_agent 74-78,99,134-137,150-152,154-165,175-183,257,313,316-320
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_23dof/gangnanm_style/G1_gangnam_style_V01.bvh_60hz.csv
+  ai_agent 1-1942
+source/unitree_rl_lab/unitree_rl_lab/utils/amp_data_tools/__init__.py
+  ai_agent 1-7
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/planner_for_training.py
+  s_262bd5c185f175::t_57d0b9babdf9fc 1-117,119-131,133-167,174-193,197-267
+  s_262bd5c185f175::t_ea12fe219959e2 118,168-173,194-196
+  s_262bd5c185f175::t_5ac43045ff8455 132
+deploy/robots/g1_23dof_fusion/include/State_Mimic.h
+  ai_agent 1-84
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/real_terminations.py
+  s_262bd5c185f175::t_3be821cf3833fc 1-21
+source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/agents/rsl_rl_ppo_cfg.py
+  ai_agent 7-11,16-18,20,25,34-35,38-39
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/real_rewards.py
+  s_262bd5c185f175::t_205b6119477d79 1-38
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/robots/g1_23dof/hitter/__init__.py
+  s_262bd5c185f175::t_18876dbb62a4f6 1-12
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/events.py
+  s_2b2d2751205319::t_b6d78a92c8a4e0 3-11,13-100,102-103
+  s_262bd5c185f175::t_a339aad89705fc 1-2,12,101
+source/unitree_rl_lab/unitree_rl_lab/__init__.py
+  ai_agent 1
+deploy/robots/g1_23dof/src/State_RLBase.cpp
+  ai_agent 1-50,56-104,106,108-109,112,115-116,119-185,188-190,193-280,283-284,286-336,338-421
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_23dof/gangnanm_style/__init__.py
+  ai_agent 1-12
+source/unitree_rl_lab/unitree_rl_lab/utils/amp_data_tools/recompute_fk_ember_23dof.py
+  ai_agent 1-389
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/planner.py
+  s_262bd5c185f175::t_c317ff5e6bd40f 919-1251
+deploy/robots/g1_23dof_mimic/src/MimicMotionPlayer.cpp
+  ai_agent 1-391
+deploy/include/FSM/State_RLMimic.h
+  ai_agent 1-83
+source/unitree_rl_lab/unitree_rl_lab/utils/amp_data_tools/recompute_fk_npz_flexible.py
+  ai_agent 1-279
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/algorithms/amp_curriculum.py
+  ai_agent 1-240
+source/unitree_rl_lab/unitree_rl_lab/utils/amp_data_tools/inspect_ember_npz.py
+  ai_agent 1-111
+scripts/rsl_rl/send_force.py
+  ai_agent 1-32
+source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/robots/g1/29dof/__init__.py
+  ai_agent 4
+deploy/robots/g1_23dof_mimic/src/State_RLMimic.cpp
+  ai_agent 1-224
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/final_real_v1.md
+  s_262bd5c185f175::t_cc33a1c60e1c3b 1-853
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/runners/on_policy_amp_runner.py
+  ai_agent 1-340
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/__init__.py
+  ai_agent 1-9
+deploy/include/isaaclab/envs/manager_based_rl_env.h
+  ai_agent 14,56-61,73-77,84-85
+deploy/robots/g1_23dof_mimic/main.cpp
+  ai_agent 1-60
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/real_curriculums.py
+  s_262bd5c185f175::t_72a8562e575ad6 1-63
+source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py
+  s_262bd5c185f175::t_2cb3f9717c0d99 422-423,425-426,428-430,554-559,563-564,566-568,749-956
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_23dof/gangnanm_style/tracking_env_cfg.py
+  ai_agent 1-373
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/envs/__init__.py
+  ai_agent 1-23
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_29dof/问题.md
+  ai_agent 1-55
+source/unitree_rl_lab/unitree_rl_lab/utils/amp_data_tools/test.py
+  ai_agent 1-415
+deploy/robots/g1_23dof_fusion/include/Types.h
+  ai_agent 1-7
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/robots/g1/29dof/agents/rsl_rl_penguin_amp_v3_ppo_cfg.py
+  ai_agent 1-175
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/robots/g1/29dof/penguin_amp_env_cfg.py
+  ai_agent 1-115
+source/unitree_rl_lab/unitree_rl_lab/utils/amp_data_tools/download_and_merge_ember_lafan_g1.py
+  ai_agent 1-348
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/robots/g1_23dof/hitter_real/__init__.py
+  s_262bd5c185f175::t_9c67be11a0b4c7 1-12
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/modules/amp_discriminator.py
+  ai_agent 1-212
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/final_v57.md
+  s_262bd5c185f175::t_278087dbe87ba6 317-318,357
+  s_2b2d2751205319::t_afcf9cde69f37f 629-693
+  h_b23a6a8439c0dd 4-5
+  s_262bd5c185f175::t_f54377d6ad48ed 782,784-785,787-794,796-797,800,802-815,818
+  s_262bd5c185f175::t_4a2c12227e6852 291
+  s_262bd5c185f175::t_0a2d4a353af15c 42
+  s_262bd5c185f175::t_6b9460dd502f0e 1199
+  s_262bd5c185f175::t_0895cd0c3689d5 1468-1477
+  s_262bd5c185f175::t_a2d6c07d793834 177,187
+  s_262bd5c185f175::t_ce27167bd36bfe 154-163,165-169,385-401
+  s_262bd5c185f175::t_9346a3c0a9f4a5 22,27
+  s_262bd5c185f175::t_6f7d53cd1352d4 798
+  s_262bd5c185f175::t_2629f0f762a8ce 43-54
+  s_262bd5c185f175::t_a286bd71082dc0 1-3,6-7,9-17,19-20,23-26,28-37,39-41,55-70,72,74-135,137-153,170-175,178-180,182-186,188-191,193-253,255-263,265-270,272-290,292-299,301-316,319-322,324-328,330-356,358-384,402-466,488-534,536,549-628,704-710,712-745,747-754,756-760,762-770,772-781,783,786,799,801,816-817,819-854,877-918,920-937,941-955,959-970,972-1038,1040-1198,1200-1249,1251-1381,1383-1391,1393-1423,1425-1428,1430-1438,1460-1467,1478-1505,1511,1513-1531,1533-1545,1575-1577,1580-1586
+  s_262bd5c185f175::t_2426014b16097e 795
+  s_262bd5c185f175::t_206d94afd1a301 1588-1594
+  s_262bd5c185f175::t_d76d41e0ae04d9 1439-1459
+  s_262bd5c185f175::t_cc260d47a147d2 535,537-548
+  s_2b2d2751205319::t_a54507852936dd 694-703
+  s_262bd5c185f175::t_dd881003725849 18,164,176,938,956,971
+  s_262bd5c185f175::t_938b46ff118afe 711
+  s_262bd5c185f175::t_2c97b5949171b2 855-876
+  s_262bd5c185f175::t_9a0ef9de293a45 8,1578
+  s_262bd5c185f175::t_4e500d60f3ed90 467-487
+  s_262bd5c185f175::t_f7da3715ec3c4d 958,1039,1392
+  s_262bd5c185f175::t_6637ce4d97cb0e 1532,1546-1574
+  s_262bd5c185f175::t_fb27a5dfdbb941 1587
+  s_262bd5c185f175::t_37256339f36a5d 1506-1510,1512
+  s_262bd5c185f175::t_5f14ad321135cd 939-940,957
+  s_262bd5c185f175::t_9f86a94fafde9c 21,38,71,73,136,181,192,254,264,271,300,323,329,746,755,761,771,919,1250,1382,1424,1429,1579
+deploy/robots/g1_23dof_mimic/config/config.yaml
+  ai_agent 1-64
+source/unitree_rl_lab/unitree_rl_lab/utils/export_deploy_cfg.py
+  ai_agent 10-12,28-30,36-38,41-43,45-47,51-53,86-92
+临时记录,md
+  ai_agent 1-598
+deploy/include/FSM/State_RLBase.h
+  ai_agent 1-82,91-93,98-100,102,105-106,108-123,127,129-130,143,147,151-152,163
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/robots/g1_23dof/hitter/hitter_env_cfg.py
+  s_262bd5c185f175::t_13b018f0a68a41 1-55,57-65,67-115,129-132,141-184,229-329,331-368
+  s_2b2d2751205319::t_920ecd8d45ded6 127
+  s_2b2d2751205319::t_071cf16c241d9d 185-228
+  s_2b2d2751205319::t_549f88ab7eabbb 56,66
+  s_2b2d2751205319::t_b431f38de45b92 116-126,128,133-140
+  s_262bd5c185f175::t_ebc7d16e25fbab 330
+deploy/include/isaaclab/manager/observation_manager_new.h
+  ai_agent 1-175
+scripts/AMP/visualize_motion_npz.py
+  ai_agent 1-263
+scripts/rsl_rl/play_with_jit.py
+  ai_agent 1-279
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/features/amp_features.py
+  ai_agent 1-554
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/terminations.py
+  s_262bd5c185f175::t_d191a0f7069bf0 1-20
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/curriculums.py
+  s_262bd5c185f175::t_a8ca5dbf629e31 54-55,57,59-60,63-64
+  s_262bd5c185f175::t_855a46e9f85150 24-30
+  s_262bd5c185f175::t_307103c7b8a754 58,62
+  s_262bd5c185f175::t_e547b0969a0083 1-22,31-53,56,61,65-76
+  s_262bd5c185f175::t_6d0899c73e4be3 23
+deploy/robots/g1_23dof_fusion/src/State_Mimic.cpp
+  ai_agent 1-846
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/__init__.py
+  s_262bd5c185f175::t_0841433a16b5a2 8-12
+  s_262bd5c185f175::t_f8359fb36fd930 1-7,13-14
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/envs/unitree_amp_env.py
+  ai_agent 1-481
+scripts/AMP/debug_motion_dataset.py
+  ai_agent 1-442
+deploy/robots/g1_23dof_fusion/main.cpp
+  ai_agent 1-61
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/algorithms/__init__.py
+  ai_agent 1-7
+deploy/include/isaaclab/algorithms/algorithms.h
+  ai_agent 1-109,118-122,127,129-130,132-144,146-156,158-163,165-183,186-195,197-263,266-274,276,278-308,310-316,318-319,322,324-333,336-349
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/real_commands.py
+  s_262bd5c185f175::t_d6c9ffcd60f580 228-230,329-330,356,358,722
+  s_262bd5c185f175::t_9a7d9d80ffca94 719,731
+  s_262bd5c185f175::t_5cad53ae3e927c 294
+  s_262bd5c185f175::t_2c34d6498fa002 235-236,452-456
+  s_262bd5c185f175::t_69fd4bb5269e92 151-158
+  s_262bd5c185f175::t_8b266cd3ab21f3 14,16,18,92-93,96-100,173-174,310,444-445,529-533,545-558,582-610,620-623,633-634,745-746
+  s_262bd5c185f175::t_c533548154f592 10-11,25-59,559-567,570-581,640-663,668-669,672-679,684-689,755,757,761-763
+  s_262bd5c185f175::t_a03e2530b8ef0d 84-85,166-171,206,213-222,522-523,611-619,624-632,707,747-754
+  s_262bd5c185f175::t_dc512cdc102e4f 568-569,664-667,680-683,758-759,764-769
+  s_262bd5c185f175::t_24ed8e3b4fdaf3 1-9,12-13,15,17,19-24,60-83,86-91,94-95,101-150,159-165,172,175-205,207-212,223-227,231-234,237-293,295-309,311-328,331-355,357,359-443,446-451,457-521,524-528,534-544,690-706,708-718,720-721,723-730,732-744
+  s_262bd5c185f175::t_c155f277664574 635-639,670-671,756,760
+scripts/rsl_rl/train.py
+  s_262bd5c185f175::t_da6ee464a92815 1-425,462-514,544-546,548-555,557-564,581-625,635,639-640,647-655,663-666,670-672,674-676,682-684,709-711,717-727,744-786,790-792,794-831,840-842,846-848,853-860
+deploy/include/isaaclab/envs/mdp/observations/observations.h
+  ai_agent 139-159
+scripts/AMP/augment_motion_npz.py
+  ai_agent 1-594
+scripts/mimic/csv_to_npz.py
+  ai_agent 17-29,41-43,52-54,72-77,82-84,92-94,144,146,148-151,156-158,162-164,187-189,193-195,212-220,235-237,280-282,337-342
+scripts/AMP/debug_amp_features.py
+  ai_agent 1-369
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/storage/__init__.py
+  ai_agent 1-8
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/rewards.py
+  s_262bd5c185f175::t_71d8c0b26f303f 113,119
+  s_262bd5c185f175::t_da87a13bd9c403 1-112,114-118,120-122
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/robots/g1/29dof/agents/rsl_rl_amp_ppo_cfg.py
+  ai_agent 1-190
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/g1_23dof/dance_102/G1_Take_102.bvh_60hz.csv
+  ai_agent 1-1749
+deploy/robots/g1_23dof_mimic/include/Types.h
+  ai_agent 1-7
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/storage/amp_rollout_storage.py
+  ai_agent 1-146
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/robots/g1/29dof/agents/rsl_rl_penguin_amp_ppo_cfg.py
+  ai_agent 1-24
+deploy/robots/g1_23dof_mimic/CMakeLists.txt
+  ai_agent 1-31
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/observations.py
+  s_2b2d2751205319::t_e28b9139b0bfd3 3,7-9,11-12,14-15,20,29,31-38,40,54,56,58-64,66-75,135-140,142-190,201-213,215-220
+  s_262bd5c185f175::t_17f2b3ef01eb5b 1-2,4-6,10,18-19,21-28,30,39,41-43,55,57,65,76-134
+  s_2b2d2751205319::t_4833a8fa9ff4f7 44-53
+  s_2b2d2751205319::t_e6f3e3c0313387 214
+  h_b23a6a8439c0dd 13,16-17,141,191-200
+deploy/robots/g1_23dof_fusion/src/State_RLBase.cpp
+  ai_agent 1-203
+deploy/robots/g1_29dof/main.cpp
+  ai_agent 42
+source/unitree_rl_lab/unitree_rl_lab/tasks/mimic/robots/__init__.py
+  ai_agent 1
+deploy/robots/g1_23dof_fusion/CMakeLists.txt
+  ai_agent 1-33
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/mdp/motion_loader.py
+  s_262bd5c185f175::t_b0eeb6d751858c 1-35,37-233
+  s_262bd5c185f175::t_20cd6d8b875238 36
+scripts/AMP/csv_to_npz_final.py
+  ai_agent 1-274
+source/unitree_rl_lab/unitree_rl_lab/tasks/amp/robots/g1/29dof/velocity_amp_env_cfg.py
+  ai_agent 1-446
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/final.md
+  s_e121cebe924639::t_d7e35564a34469 562
+  s_e121cebe924639::t_1d89b30c2da6d1 588,590
+  s_e121cebe924639::t_30b5b666ac3861 1,3-47,52-53,55,78,80,102-119,121,123,125-135,137-145,147-151,154-155,159-171,180-198,200,214-251,253,313-362,364-447,449-453,455,458,473,482,509,525,527,530-536,542-543,545,548,550-561,563-587,589,591-606,609,632,635-653,655-658,669-678,680-909,914-921,923-974,976-981,1013-1014,1016-1048,1054-1056,1058,1060,1064,1076-1167,1169-1172,1174-1183,1185-1187
+  s_e121cebe924639::t_d240665caeb805 1049-1053,1057,1059,1061-1063,1065-1075
+  s_e121cebe924639::t_431ff0c6c38834 48-51
+  s_e121cebe924639::t_7f064b3ab06cb2 199,201-213
+  s_e121cebe924639::t_25c8a94719bb59 363
+  s_e121cebe924639::t_e18e888b0371a7 1173
+  s_e121cebe924639::t_9fc216f1826533 1184
+  s_e121cebe924639::t_f5e66d2ed9779c 448
+  s_e121cebe924639::t_f4997a7d00290c 526,528-529,537-541,546-547,549
+  s_e121cebe924639::t_3a608fddf566b9 975,982-1012,1015
+  s_e121cebe924639::t_cf7826e8e4d375 54,56-77
+  s_e121cebe924639::t_9137af49f1fdfe 146,152-153,156-158
+  s_e121cebe924639::t_d2ad1b283eaaff 607-608,610-631,633-634
+  s_e121cebe924639::t_7927d9e3184d01 1168
+  s_e121cebe924639::t_fc0ed1abb21c60 79,81-101
+  s_e121cebe924639::t_7ca15263948d63 252,254-312
+  s_e121cebe924639::t_ecaf1694d93a91 172-179
+  s_e121cebe924639::t_96937a088874ae 910-913,922
+  s_e121cebe924639::t_bf5bfaecb4b57c 654,659-668,679
+  h_b23a6a8439c0dd 2
+  s_e121cebe924639::t_bfbf6808ec4e44 120,122,124
+  s_e121cebe924639::t_181aa3eb5285e6 454,456-457,459-472,474-481,483-508,510-524
+scripts/debug_push_link.py
+  ai_agent 1-103
+deploy/include/FSM/State_Passive.h
+  ai_agent 39-49,52-53,57-113
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/runners/__init__.py
+  ai_agent 1-7
+source/unitree_rl_lab/unitree_rl_lab/rsl_rl_amp/storage/motion_dataset.py
+  ai_agent 1-772
+scripts/rsl_rl/play.py
+  s_262bd5c185f175::t_361238f2e6fe4b 1-280,301-316,324-329,356-363,369,371,373-374,386-388,397-399,404-406,411-413,439-442,445-469,472-474,476-479,482-488,490-493,495-502,505-506,513-526,528-535
+  s_262bd5c185f175::t_aa004fb2f2c6d9 370,372,480-481,489,494,503-504
+  s_262bd5c185f175::t_ec24b246387463 414-418
+scripts/rsl_rl/play_with_force_server.py
+  ai_agent 1-366
+source/unitree_rl_lab/unitree_rl_lab/tasks/pingpong/robots/g1_23dof/hitter_real/hitter_real_env_cfg.py
+  s_262bd5c185f175::t_088b9165272921 252
+  s_262bd5c185f175::t_52cce28a08b0d2 97
+  s_262bd5c185f175::t_7a4bc027af5ee2 127,129
+  s_262bd5c185f175::t_7e2c6a75b4aacf 27-44
+  s_262bd5c185f175::t_cb6970241e3f0f 128,130
+  s_262bd5c185f175::t_f0d21840edb90b 239-251
+  s_262bd5c185f175::t_dce83ca62d8fe7 1-26,45-96,98-109,112-126,131-238,253
+  s_813667e3891573::t_2376870da1429f 110-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ffcc4a1f2c77fe6456f21cf6fe9c50ee84745dc3",
+  "prompts": {},
+  "humans": {
+    "h_b23a6a8439c0dd": {
+      "author": "unknown"
+    }
+  },
+  "sessions": {
+    "s_262bd5c185f175": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e4844-7684-7322-955c-29144553db15",
+        "model": "gpt-5.5"
+      },
+      "human_author": "OUVictorKING <OUVictorKING@users.noreply.github.com>"
+    },
+    "s_2b2d2751205319": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a70d990d-ed30-4421-aa55-7826d6325746",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "OUVictorKING <OUVictorKING@users.noreply.github.com>"
+    },
+    "s_813667e3891573": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e5294-689a-7e11-88ce-785ca06f111b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "OUVictorKING <OUVictorKING@users.noreply.github.com>"
+    },
+    "s_9b61f2e639d8c8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c9078e52-94f1-472b-84f2-2693510f2df3",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "OUVictorKING <OUVictorKING@users.noreply.github.com>"
+    },
+    "s_e121cebe924639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22c90fa1-cce5-496e-b18f-ee4738d3bebf",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "OUVictorKING <OUVictorKING@users.noreply.github.com>"
+    }
+  }
+}
