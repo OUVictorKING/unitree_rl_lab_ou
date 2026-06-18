@@ -10,6 +10,7 @@ Reference: https://github.com/unitreerobotics/unitree_ros
 
 import copy
 import os
+from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import IdealPDActuatorCfg, ImplicitActuatorCfg
@@ -18,8 +19,9 @@ from isaaclab.utils import configclass
 
 from unitree_rl_lab.assets.robots import unitree_actuators
 
-UNITREE_MODEL_DIR = "/home/woan/HumanoidProject/unitree_rl_lab/unitree_model"  # Replace with the actual path to your unitree_model directory
-UNITREE_ROS_DIR = "/home/woan/HumanoidProject/unitree_rl_lab/unitree_ros"  # Replace with the actual path to your unitree_ros package
+_PROJECT_ROOT = Path(__file__).resolve().parents[5]
+UNITREE_MODEL_DIR = os.environ.get("UNITREE_MODEL_DIR", str(_PROJECT_ROOT / "unitree_model"))
+UNITREE_ROS_DIR = os.environ.get("UNITREE_ROS_DIR", str(_PROJECT_ROOT / "unitree_ros"))
 
 
 @configclass

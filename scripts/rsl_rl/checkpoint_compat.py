@@ -41,11 +41,8 @@ def load_checkpoint_summary(path: str, map_location: str = "cpu") -> CheckpointS
     checkpoint = torch.load(abs_path, weights_only=False, map_location=map_location)
     if not isinstance(checkpoint, dict):
         raise TypeError(f"Checkpoint must be a dict, got {type(checkpoint).__name__}: {abs_path}")
-    if "actor_state_dict" not in checkpoint:
-        raise KeyError(f"Checkpoint has no actor_state_dict: {abs_path}")
 
-    actor_sd = checkpoint["actor_state_dict"]
-    critic_sd = checkpoint.get("critic_state_dict")
+    actor_sd, critic_sd = extract_actor_critic_state_dicts(checkpoint)
     if not isinstance(actor_sd, Mapping):
         raise TypeError(f"actor_state_dict must be a mapping, got {type(actor_sd).__name__}")
     if critic_sd is not None and not isinstance(critic_sd, Mapping):
@@ -124,27 +121,68 @@ def get_runner_policy_state_dicts(
     runner: Any,
 ) -> tuple[Mapping[str, torch.Tensor], Mapping[str, torch.Tensor]]:
     """Return actor and critic state_dicts from an RSL-RL runner."""
-    alg = runner.alg
-    actor = getattr(alg, "actor", None)
-    critic = getattr(alg, "critic", None)
+    actor, critic = _get_runner_actor_critic_modules(runner)
     if actor is None or critic is None:
         raise AttributeError(
-            "Expected runner.alg.actor and runner.alg.critic for compatibility checks. "
-            f"Available alg attrs: {sorted(a for a in dir(alg) if not a.startswith('_'))}"
+            "Expected actor and critic modules for compatibility checks. "
+            f"Available alg attrs: {sorted(a for a in dir(runner.alg) if not a.startswith('_'))}"
         )
     return actor.state_dict(), critic.state_dict()
 
 
 def get_runner_actor_state_dict(runner: Any) -> Mapping[str, torch.Tensor]:
     """Return only the actor state_dict from an RSL-RL runner."""
-    alg = runner.alg
-    actor = getattr(alg, "actor", None)
+    actor, _ = _get_runner_actor_critic_modules(runner)
     if actor is None:
         raise AttributeError(
-            "Expected runner.alg.actor for actor-only compatibility checks. "
-            f"Available alg attrs: {sorted(a for a in dir(alg) if not a.startswith('_'))}"
+            "Expected an actor module for actor-only compatibility checks. "
+            f"Available alg attrs: {sorted(a for a in dir(runner.alg) if not a.startswith('_'))}"
         )
     return actor.state_dict()
+
+
+def extract_actor_critic_state_dicts(
+    checkpoint: Mapping[str, Any],
+) -> tuple[Mapping[str, torch.Tensor], Mapping[str, torch.Tensor] | None]:
+    """Extract actor/critic weights from both repo-local and stock RSL-RL checkpoints."""
+    if "actor_state_dict" in checkpoint:
+        return checkpoint["actor_state_dict"], checkpoint.get("critic_state_dict")
+
+    model_sd = checkpoint.get("model_state_dict")
+    if not isinstance(model_sd, Mapping):
+        raise KeyError("Checkpoint has neither actor_state_dict nor model_state_dict.")
+
+    actor_sd = _strip_state_prefix(model_sd, "actor.")
+    critic_sd = _strip_state_prefix(model_sd, "critic.")
+    if not actor_sd:
+        raise KeyError("model_state_dict has no actor.* parameters.")
+    if not critic_sd:
+        critic_sd = None
+    return actor_sd, critic_sd
+
+
+def _get_runner_actor_critic_modules(runner: Any) -> tuple[Any | None, Any | None]:
+    alg = runner.alg
+    actor = getattr(alg, "actor", None)
+    critic = getattr(alg, "critic", None)
+    if actor is not None or critic is not None:
+        return actor, critic
+
+    policy = getattr(alg, "policy", None)
+    if policy is None:
+        return None, None
+    return getattr(policy, "actor", None), getattr(policy, "critic", None)
+
+
+def _strip_state_prefix(
+    state_dict: Mapping[str, Any],
+    prefix: str,
+) -> dict[str, Any]:
+    return {
+        key[len(prefix):]: value
+        for key, value in state_dict.items()
+        if key.startswith(prefix)
+    }
 
 
 def check_checkpoint_compatibility(
@@ -338,6 +376,7 @@ def _experiment_from_path(path: str) -> str | None:
 def _experiment_to_task_name(experiment_name: str) -> str:
     known = {
         "unitree_g1_23dof_pingpong_hitter": "Unitree-G1-23dof-Pingpong-HITTER",
+        "unitree_g1_23dof_pingpong_hitter_with_giat": "Unitree-G1-23dof-Pingpong-HITTER-WITH-GIAT",
         "unitree_g1_23dof_pingpong_hitter_real": "Unitree-G1-23dof-Pingpong-HITTER-REAL",
     }
     return known.get(experiment_name, experiment_name)

@@ -95,6 +95,16 @@ def pingpong_t_to_hit(env: "ManagerBasedEnv", command_name: str, noisy: bool = F
     return t
 
 
+def pingpong_gait_phase(env: "ManagerBasedEnv", command_name: str) -> torch.Tensor:
+    """One-shot pre-strike gait clock, encoded as sin/cos and zeroed when inactive."""
+    cmd = _command(env, command_name)
+    denom = torch.clamp(cmd.t_pre_initial, min=1.0e-6)
+    phase = torch.clamp((cmd.t_pre_initial - cmd.t_to_hit) / denom, 0.0, 1.0)
+    out = torch.stack((torch.sin(2.0 * torch.pi * phase), torch.cos(2.0 * torch.pi * phase)), dim=-1)
+    active = cmd.t_to_hit > 0.0
+    return out * active.unsqueeze(-1).float()
+
+
 def pingpong_swing_type(env: "ManagerBasedEnv", command_name: str) -> torch.Tensor:
     # Signed swing flag: forehand=+1, backhand=-1. Matches the sign convention
     # used by goal_orientation reward (`sign = 1 - 2*swing_type`), so the
@@ -221,5 +231,6 @@ for _f in (
     pingpong_hit_position_b,
     pingpong_racket_velocity_w,
     pingpong_t_to_hit,
+    pingpong_gait_phase,
 ):
     register_delayable_func(_f)

@@ -235,6 +235,9 @@ class ObservationsCfg:
         hit_pos = ObsTerm(func=mdp.pingpong_hit_position_b, params={"command_name": "pingpong", "noisy": True})
         racket_vel = ObsTerm(func=mdp.pingpong_racket_velocity_w, params={"command_name": "pingpong", "noisy": True})
         t_to_hit = ObsTerm(func=mdp.pingpong_t_to_hit, params={"command_name": "pingpong", "noisy": True})
+        # One-shot pre-strike gait phase. Inactive/post-strike returns [0, 0],
+        # so the policy only sees the clock while preparing to step into a hit.
+        gait_phase = ObsTerm(func=mdp.pingpong_gait_phase, params={"command_name": "pingpong"})
         # v64: explicit paddle-face alignment signal. The actor otherwise can't see
         # its own face (only racket_vel) and must infer it from raw joints via FK —
         # the likely reason face-alignment was so hard. active_face is SIGNED by
@@ -276,6 +279,7 @@ class ObservationsCfg:
         hit_pos = ObsTerm(func=mdp.pingpong_hit_position_b, params={"command_name": "pingpong", "noisy": False})
         racket_vel = ObsTerm(func=mdp.pingpong_racket_velocity_w, params={"command_name": "pingpong", "noisy": False})
         t_to_hit = ObsTerm(func=mdp.pingpong_t_to_hit, params={"command_name": "pingpong", "noisy": False})
+        gait_phase = ObsTerm(func=mdp.pingpong_gait_phase, params={"command_name": "pingpong"})
         # v64: paddle-face alignment signal (see PolicyCfg). Critic sees noiseless.
         active_face = ObsTerm(func=mdp.pingpong_active_face_b, params={"command_name": "pingpong", "noisy": False})
         target_normal = ObsTerm(func=mdp.pingpong_target_normal_b, params={"command_name": "pingpong", "noisy": False})
@@ -451,6 +455,21 @@ class RewardsCfg:
         weight=0.3,
         params={"command_name": "pingpong", "std": 0.3},
     )
+    # HITTER-with-gait: encourage exactly one coordinated pre-strike step when
+    # the base still needs to move. The final settle window is left to the
+    # original strike/standing rewards, avoiding forced foot switching at impact.
+    pre_strike_feet_gait = RewTerm(
+        func=mdp.pre_strike_feet_gait,
+        weight=0.5,
+        params={
+            "command_name": "pingpong",
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+            "offset": (0.0, 0.5),
+            "threshold": 0.55,
+            "move_threshold": 0.06,
+            "settle_time": 0.15,
+        },
+    )
 
     # regularization
     alive = RewTerm(func=mdp.is_alive, weight=0.04)
@@ -472,15 +491,17 @@ class RewardsCfg:
     # Penalize pelvis roll/pitch RATE only (not yaw — swing needs yaw rotation).
     # Targets the post-strike topple mode where reaction torque from arm extension
     # rocks the base before next cmd resamples.
-    pelvis_ang_vel_xy = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
+    pelvis_ang_vel_xy = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.03)
     # Penalize vertical bounce — model_3000 from 12-07-26 showed robot hopping
     # during repositioning. V58 bumped to -1.5 (locomotion default) per user
     # request to harden anti-bounce after fh_share cheat investigation.
-    pelvis_lin_vel_z = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.5)
+    # HITTER-with-gait relaxes this so legitimate stepping does not get crushed
+    # by the anti-bounce term, while still discouraging obvious hopping.
+    pelvis_lin_vel_z = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.8)
     pelvis_height = RewTerm(func=mdp.base_height_l2, weight=-5.0, params={"target_height": 0.74})
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-0.3,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),

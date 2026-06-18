@@ -33,6 +33,7 @@ _ut_setup_conda_env() {
 
     # copied from isaaclab/_isaac_sim/setup_conda_env.sh
     # add source unitree_rl_lab.sh to conda activate.d
+    mkdir -p ${CONDA_PREFIX}/etc/conda/activate.d
     printf '%s\n' '#!/usr/bin/env bash' '' \
         '# for Isaac Lab' \
         'export ISAACLAB_PATH='${ISAACLAB_PATH}'' \
@@ -64,7 +65,7 @@ case "$1" in
         git lfs install # ensure git lfs is installed
         pip install -e ${UNITREE_RL_LAB_PATH}/source/unitree_rl_lab/
         _ut_setup_conda_env
-        activate-global-python-argcomplete
+        activate-global-python-argcomplete --user
         ;;
     -l|--list)
         shift

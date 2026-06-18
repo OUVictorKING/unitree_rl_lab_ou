@@ -371,7 +371,6 @@ from isaaclab_rl.rsl_rl import (
     RslRlVecEnvWrapper,
     export_policy_as_jit,
     export_policy_as_onnx,
-    handle_deprecated_rsl_rl_cfg,
 )
 from isaaclab_tasks.utils import get_checkpoint_path
 
@@ -383,6 +382,7 @@ from checkpoint_compat import (
     load_checkpoint_summary,
     print_actor_checkpoint_compat_report,
 )
+from rsl_rl_compat import handle_deprecated_rsl_rl_cfg, load_runner_checkpoint
 
 
 class PingpongPlayErrorMonitor:
@@ -733,7 +733,7 @@ def main():
         "[INFO] Checkpoint load mode: play actor-only, "
         "critic=False, optimizer=False, iteration=True"
     )
-    runner.load(resume_path, load_cfg=play_load_cfg)
+    load_runner_checkpoint(runner, resume_path, load_cfg=play_load_cfg)
 
     # obtain the trained policy for inference
     policy = runner.get_inference_policy(device=env.unwrapped.device)

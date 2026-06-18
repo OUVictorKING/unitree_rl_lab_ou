@@ -26,9 +26,9 @@ from typing import Any
 
 from rsl_rl.algorithms import PPO
 from rsl_rl.env import VecEnv
-from rsl_rl.models import MLPModel
-from rsl_rl.modules import EmpiricalNormalization
-from rsl_rl.utils import resolve_callable, resolve_obs_groups
+from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
+from rsl_rl.networks import EmpiricalNormalization
+from rsl_rl.utils import resolve_obs_groups, string_to_callable
 
 from ..features.amp_features import AmpObsSpec
 from ..modules.amp_discriminator import AmpDiscriminator
@@ -46,9 +46,7 @@ class AmpPPO(PPO):
     """PPO + AMP discriminator.
 
     Args:
-        actor: Policy network (MLPModel).
-        critic: Value network (MLPModel).
-        storage: An :class:`AmpRolloutStorage` instance.
+        policy: Actor-critic policy network.
         discriminator: An :class:`AmpDiscriminator` instance.
         motion_dataset: The expert :class:`MotionDataset`.
         amp_reward_coef: Scalar multiplier applied to the discriminator-based
@@ -73,9 +71,7 @@ class AmpPPO(PPO):
     # ------------------------------------------------------------------
     def __init__(
         self,
-        actor: MLPModel,
-        critic: MLPModel,
-        storage: AmpRolloutStorage,
+        policy: ActorCritic | ActorCriticRecurrent,
         discriminator: AmpDiscriminator,
         motion_dataset: MotionDataset,
         *,
@@ -90,13 +86,7 @@ class AmpPPO(PPO):
         amp_curriculum_cfg: AmpRewardCurriculumCfg | dict | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(actor=actor, critic=critic, storage=storage, **kwargs)
-
-        if not isinstance(storage, AmpRolloutStorage):
-            raise TypeError(
-                "AmpPPO requires an AmpRolloutStorage instance, got "
-                f"{type(storage).__name__}."
-            )
+        super().__init__(policy=policy, **kwargs)
 
         self.discriminator = discriminator.to(self.device)
         self.motion_dataset = motion_dataset
@@ -167,6 +157,37 @@ class AmpPPO(PPO):
             "amp_acc_fake": 0.0,
         }
 
+    @property
+    def actor(self) -> nn.Module:
+        """Expose the actor module for this repo's checkpoint compatibility helpers."""
+        return self.policy.actor
+
+    @property
+    def critic(self) -> nn.Module:
+        """Expose the critic module for this repo's checkpoint compatibility helpers."""
+        return self.policy.critic
+
+    def init_storage(  # type: ignore[override]
+        self,
+        training_type: str,
+        num_envs: int,
+        num_transitions_per_env: int,
+        obs: TensorDict,
+        actions_shape: tuple[int] | list[int],
+    ) -> None:
+        amp_obs_dim = getattr(self.discriminator, "amp_obs_dim", None)
+        if amp_obs_dim is None:
+            raise RuntimeError("AmpPPO.discriminator must expose amp_obs_dim.")
+        self.storage = AmpRolloutStorage(
+            training_type=training_type,
+            num_envs=num_envs,
+            num_transitions_per_env=num_transitions_per_env,
+            obs=obs,
+            actions_shape=actions_shape,
+            amp_obs_dim=int(amp_obs_dim),
+            device=self.device,
+        )
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -176,7 +197,7 @@ class AmpPPO(PPO):
         """Apply (and optionally update) the AMP observation normalizer."""
         if not self.normalize_amp_obs:
             return amp_obs
-        if update and self.training:
+        if update and self.discriminator.training:
             # EmpiricalNormalization.update mutates running stats.
             self.amp_obs_normalizer.update(amp_obs)  # type: ignore[attr-defined]
         return self.amp_obs_normalizer(amp_obs)
@@ -364,6 +385,7 @@ class AmpPPO(PPO):
     # ------------------------------------------------------------------
     def update(self) -> dict[str, float]:  # type: ignore[override]
         """Run PPO update then discriminator update; return combined loss dict."""
+        storage: AmpRolloutStorage = self.storage  # type: ignore[assignment]
         self._update_iter_count += 1
 
         # Update AMP normalizer with the full rollout *before* PPO/disc updates
@@ -387,13 +409,10 @@ class AmpPPO(PPO):
         amp_loss_dict["amp_disc_update_fired"] = 1.0 if disc_gate_open else 0.0
 
         # PPO update (also clears self.storage at the end).
-        ppo_loss_dict = super().update()
-
-        # Per-rollout reward component logging.
-        storage: AmpRolloutStorage = self.storage  # type: ignore[assignment]
         with torch.no_grad():
             task_reward_mean = float(storage.task_rewards.mean().item())
             amp_reward_mean = float(storage.amp_rewards.mean().item())
+        ppo_loss_dict = super().update()
 
         # Tick the only-up AMP reward curriculum and sync alpha_amp.
         curr_log = self._step_curriculum(task_reward_mean)
@@ -450,14 +469,18 @@ class AmpPPO(PPO):
     # ------------------------------------------------------------------
     # Modes
     # ------------------------------------------------------------------
-    def train_mode(self) -> None:  # type: ignore[override]
-        super().train_mode()
+    def train_mode(self) -> None:
+        self.policy.train()
+        if self.rnd:
+            self.rnd.train()
         self.discriminator.train()
         if self.normalize_amp_obs:
             self.amp_obs_normalizer.train()
 
-    def eval_mode(self) -> None:  # type: ignore[override]
-        super().eval_mode()
+    def eval_mode(self) -> None:
+        self.policy.eval()
+        if self.rnd:
+            self.rnd.eval()
         self.discriminator.eval()
         if self.normalize_amp_obs:
             self.amp_obs_normalizer.eval()
@@ -465,17 +488,14 @@ class AmpPPO(PPO):
     # ------------------------------------------------------------------
     # Save / load
     # ------------------------------------------------------------------
-    def save(self) -> dict:  # type: ignore[override]
+    def extra_state_dict(self) -> dict:
         """Return a dict with PPO + AMP component states."""
-        saved = super().save()
-        saved["amp_discriminator_state_dict"] = self.discriminator.state_dict()
-        saved["amp_discriminator_optimizer_state_dict"] = (
-            self.discriminator_optimizer.state_dict()
-        )
+        saved = {
+            "amp_discriminator_state_dict": self.discriminator.state_dict(),
+            "amp_discriminator_optimizer_state_dict": self.discriminator_optimizer.state_dict(),
+        }
         if self.normalize_amp_obs:
-            saved["amp_obs_normalizer_state_dict"] = (
-                self.amp_obs_normalizer.state_dict()
-            )
+            saved["amp_obs_normalizer_state_dict"] = self.amp_obs_normalizer.state_dict()
         saved["amp_cfg"] = {
             "amp_reward_coef": self.amp_reward_coef,
             "amp_discriminator_learning_rate": self.amp_discriminator_learning_rate,
@@ -488,46 +508,21 @@ class AmpPPO(PPO):
         saved["amp_curriculum_state"] = self.curriculum.save_state()
         return saved
 
-    def load(  # type: ignore[override]
+    def load_amp_state(
         self,
         loaded_dict: dict,
-        load_cfg: dict | None,
-        strict: bool,
-    ) -> bool:
-        """Load PPO + AMP components from a same-schema checkpoint.
-
-        ``load_cfg`` forwards standard PPO keys (``actor``, ``critic``,
-        ``optimizer``, ``iteration``, ``rnd``) to the parent and recognizes
-        three AMP-specific keys:
-
-        - ``amp``: load AMP discriminator weights if present (default True).
-        - ``amp_optimizer``: load discriminator optimizer state (default True).
-        - ``amp_normalizer``: load AMP observation normalizer (default True).
-
-        The checkpoint must have been produced by an AMP config with the same
-        feature layout — there is no compatibility fallback. Change the AMP
-        feature set → train from scratch.
-        """
+        load_cfg: dict | None = None,
+        strict: bool = True,
+    ) -> None:
+        """Load AMP-specific checkpoint state."""
         lc = dict(load_cfg) if load_cfg is not None else {}
 
         load_amp = bool(lc.get("amp", True))
         load_amp_opt = bool(lc.get("amp_optimizer", lc.get("amp", True)))
         load_amp_norm = bool(lc.get("amp_normalizer", lc.get("amp", True)))
 
-        # Strip AMP-only keys so the parent PPO.load doesn't see them.
-        parent_cfg = (
-            None
-            if load_cfg is None
-            else {
-                k: v
-                for k, v in lc.items()
-                if k in ("actor", "critic", "optimizer", "iteration", "rnd")
-            }
-        )
-        load_it = super().load(loaded_dict, parent_cfg, strict)
-
         if not load_amp:
-            return load_it
+            return
 
         if "amp_discriminator_state_dict" in loaded_dict:
             self.discriminator.load_state_dict(
@@ -552,8 +547,6 @@ class AmpPPO(PPO):
         if "amp_curriculum_state" in loaded_dict:
             self.curriculum.load_state(loaded_dict["amp_curriculum_state"])
             self.amp_reward_coef = float(self.curriculum.alpha_amp)
-
-        return load_it
 
     # ------------------------------------------------------------------
     # Multi-GPU parameter sync
@@ -590,14 +583,14 @@ class AmpPPO(PPO):
     # ------------------------------------------------------------------
     @staticmethod
     def construct_algorithm(  # type: ignore[override]
-        obs: TensorDict, env: VecEnv, cfg: dict, device: str
+        obs: TensorDict, env: VecEnv, cfg: dict, device: str, multi_gpu_cfg: dict | None = None
     ) -> "AmpPPO":
         """Construct an :class:`AmpPPO` from a configuration dict.
 
         Config layout expected under ``cfg``:
 
         - ``algorithm``: PPO + AMP kwargs. ``class_name`` is the AMP class.
-        - ``actor`` / ``critic``: forwarded to their respective MLP models.
+        - ``policy``: forwarded to the RSL-RL ActorCritic policy.
         - ``obs_groups``: dict mapping obs-set name to a list of obs groups.
             Must contain ``"amp"``. If absent, defaults to ``[AMP_OBS_SET_NAME]``
             when a group of that name exists in ``obs``.
@@ -631,14 +624,18 @@ class AmpPPO(PPO):
         AMP algorithm can be plugged into ``OnPolicyAmpRunner`` with minimal
         friction.
         """
-        # --------------------------------------------------------------
-        # Resolve classes 使用resolve_callable将这些类的名字字符串解析成类对象
-        # type[MLPModel]是rslrl里面的类，能够自动创建MLPModel实例
-        # pop就是将这个class name从字典里面摘除，后面字典里面就没有这个信息了
-        # --------------------------------------------------------------
-        alg_class: type[AmpPPO] = resolve_callable(cfg["algorithm"].pop("class_name"))  # type: ignore
-        actor_class: type[MLPModel] = resolve_callable(cfg["actor"].pop("class_name"))  # type: ignore
-        critic_class: type[MLPModel] = resolve_callable(cfg["critic"].pop("class_name"))  # type: ignore
+        cfg = dict(cfg)
+        cfg["algorithm"] = dict(cfg["algorithm"])
+        cfg["policy"] = dict(cfg["policy"])
+        cfg["obs_groups"] = dict(cfg["obs_groups"])
+
+        alg_class_name = cfg["algorithm"].pop("class_name")
+        policy_class_name = cfg["policy"].pop("class_name", "ActorCritic")
+        alg_class: type[AmpPPO] = _resolve_class(alg_class_name, {"AmpPPO": AmpPPO})  # type: ignore[assignment]
+        policy_class: type[ActorCritic | ActorCriticRecurrent] = _resolve_class(  # type: ignore[assignment]
+            policy_class_name,
+            {"ActorCritic": ActorCritic, "ActorCriticRecurrent": ActorCriticRecurrent},
+        )
 
         # --------------------------------------------------------------
         # Resolve obs_groups (must include "amp")
@@ -655,7 +652,7 @@ class AmpPPO(PPO):
                     f"named '{AMP_OBS_SET_NAME}' is exposed by the environment. AMP requires "
                     f"a dedicated AMP observation group."
                 )
-        default_sets = ["actor", "critic"]
+        default_sets = ["critic"]
         cfg["obs_groups"] = resolve_obs_groups(obs, cfg["obs_groups"], default_sets)
 
         # --------------------------------------------------------------
@@ -718,29 +715,14 @@ class AmpPPO(PPO):
             cfg["algorithm"]["amp_curriculum_cfg"] = dict(curriculum_cfg)
 
         # --------------------------------------------------------------
-        # Build components
-        # --------------------------------------------------------------
-        actor: MLPModel = actor_class(
-            obs, cfg["obs_groups"], "actor", env.num_actions, **cfg["actor"]
-        ).to(device)
-        print(f"Actor Model: {actor}")
+        # Resolve deprecated runner-level normalization into the 3.1.x policy cfg.
+        if cfg.get("empirical_normalization") is not None:
+            cfg["policy"].setdefault("actor_obs_normalization", cfg["empirical_normalization"])
+            cfg["policy"].setdefault("critic_obs_normalization", cfg["empirical_normalization"])
 
-        if cfg["algorithm"].pop("share_cnn_encoders", None):
-            cfg["critic"]["cnns"] = actor.cnns  # type: ignore[attr-defined]
-        critic: MLPModel = critic_class(
-            obs, cfg["obs_groups"], "critic", 1, **cfg["critic"]
-        ).to(device)
-        print(f"Critic Model: {critic}")
-
-        storage = AmpRolloutStorage(
-            training_type="rl",
-            num_envs=env.num_envs,
-            num_transitions_per_env=cfg["num_steps_per_env"],
-            obs=obs,
-            actions_shape=[env.num_actions],
-            amp_obs_dim=amp_obs_dim,
-            device=device,
-        )
+        # RSL-RL 3.1.x hard-codes Adam in PPO.__init__; newer config files may
+        # still carry an optimizer name. Keep the config forward-compatible.
+        cfg["algorithm"].pop("optimizer", None)
 
         discriminator = AmpDiscriminator(amp_obs_dim=amp_obs_dim, **disc_kwargs).to(
             device
@@ -758,15 +740,27 @@ class AmpPPO(PPO):
             device=device,
         )
 
+        policy = policy_class(
+            obs,
+            cfg["obs_groups"],
+            env.num_actions,
+            **cfg["policy"],
+        ).to(device)
+
         alg: AmpPPO = alg_class(
-            actor=actor,
-            critic=critic,
-            storage=storage,
+            policy=policy,
             discriminator=discriminator,
             motion_dataset=motion_dataset,
             device=device,
             **cfg["algorithm"],
-            multi_gpu_cfg=cfg["multi_gpu"],
+            multi_gpu_cfg=multi_gpu_cfg,
+        )
+        alg.init_storage(
+            "rl",
+            env.num_envs,
+            cfg["num_steps_per_env"],
+            obs,
+            [env.num_actions],
         )
         return alg
 
@@ -817,3 +811,15 @@ def _infer_amp_obs_dim(obs: TensorDict, amp_obs_groups: list[str], env: VecEnv) 
             "Could not infer AMP observation dimension from the environment."
         )
     return total
+
+
+def _resolve_class(name: str, local: dict[str, Any]):
+    """Resolve short RSL-RL names or module:Class strings."""
+    if name in local:
+        return local[name]
+    if ":" in name:
+        return string_to_callable(name)
+    if "." in name:
+        module_name, attr_name = name.rsplit(".", 1)
+        return string_to_callable(f"{module_name}:{attr_name}")
+    raise ValueError(f"Unsupported class name: {name!r}")

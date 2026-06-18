@@ -60,7 +60,6 @@ _build
 # Training logs / runs / recordings (user explicitly excluded logs/)
 **/runs/*
 **/logs/*
-**/logs_*/
 **/recordings/*
 
 # Pre-Trained Checkpoints (kept local only)

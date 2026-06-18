@@ -20,6 +20,7 @@ consumed by :class:`UnitreeAmpEnv` and :meth:`AmpPPO.construct_algorithm`.
 """
 
 import math
+from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
@@ -350,8 +351,9 @@ class CurriculumCfg:
 # Penguin V1 AMP: single unified spec (80-dim phi_t, stack_k=4). Built inside
 # __post_init__ so callers can customize via cfg.amp_spec.include_* flags.
 # Motion files: override per-run via the agent cfg and/or this placeholder.
+_PROJECT_ROOT = Path(__file__).resolve().parents[8]
 DEFAULT_PENGUIN_MOTION_FILES: list[str] = [
-    "/home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/penguin/g1_qie_motion.npz",
+    str(_PROJECT_ROOT / "motion_datasets/penguin/g1_qie_motion.npz"),
 ]
 
 

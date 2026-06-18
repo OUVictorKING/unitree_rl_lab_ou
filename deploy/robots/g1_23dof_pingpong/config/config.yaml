@@ -122,8 +122,9 @@ FSM:
     # Export the policy first, so this path contains:
     #   params/deploy.yaml
     #   exported/policy.onnx
-    # policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/2026-06-06_10-18-09_new_PD
-    policy_dir: ../../../deploy/robots/g1_23dof_pingpong/data/pingpong
+    policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_pingpong_hitter_with_giat/2026-06-17_23-28-09
+    # policy_dir: ../../../logs/rsl_rl/unitree_g1_23dof_pingpong_hitter/2026-06-16_22-59-43
+    # policy_dir: ../../../deploy/robots/g1_23dof_pingpong/data/pingpong
     
     policy_dt: 0.02
 
@@ -144,7 +145,8 @@ FSM:
     # After the noise-aware policy is retrained, you may try window=1 to feed
     # the actor raw motor.dq so it sees the same distribution it trained on.
     joint_vel_obs_source: motor_dq
-    joint_vel_filter_window: 10
+    # joint_vel_filter_window: 10
+    joint_vel_filter_window: 1
     # joint_vel_finite_diff_steps: 5   # only used when joint_vel_obs_source: finite_diff
 
     logging:
@@ -183,11 +185,12 @@ FSM:
       motor_trace_csv:
         enable: true
         output: ../../../deploy/robots/g1_23dof_pingpong/logs/motor_trace.csv
-      # Per-tick observation trace: full 92-D actor input vector every 50Hz.
+      # Per-tick observation trace: full actor input vector every 50Hz.
       # Use to localize sim-vs-real OOD by per-dim std diff. Column order
       # (obs_0..91) matches the "Pingpong obs order" line printed at startup:
       #   base_ang_vel(3) projected_gravity(3) base_yaw(2) base_err(2)
-      #   hit_pos(3) racket_vel(3) t_to_hit(1) active_face(3) target_normal(3)
+      #   hit_pos(3) racket_vel(3) t_to_hit(1) [gait_phase(2) for gait policies]
+      #   active_face(3) target_normal(3)
       #   joint_pos(23) joint_vel(23) last_action(23)
       # IMU-derived: obs_0..5 (base_ang_vel + projected_gravity).
       obs_trace_csv:
@@ -271,6 +274,7 @@ FSM:
       # previous unfiltered code path. Increase if mocap is jittery; do not
       # exceed ~10 (= 90ms latency at 110Hz, starts to lag behind real motion).
       base_filter_window: 10
+      # base_filter_window: 1
       # Real-robot debugging hatch. When false, ball PoseStamped messages are
       # still subscribed (1-Hz INFO + ros_ball_trace.csv keep printing/recording
       # so you can see mocap is alive) but the BallTrajFilter and ExternalState
@@ -280,7 +284,8 @@ FSM:
       # waiting_initial_t_to_hit_=-0.02 down to -post_swing_time and stays).
       # Use this to verify the policy alone is stable before throwing the ball.
       # Switch back to true for live ping-pong.
-      enable_ball_input: false
+      # enable_ball_input: false
+      enable_ball_input: true
       # Use ball_state.header.stamp to compensate tracking/network latency:
       # cmd.t_to_hit = planner_t_to_hit_from_sample - sample_age.
       # Keep ROS clocks synchronized across machines.
@@ -327,12 +332,12 @@ FSM:
       # Replace these with the exact expert npz pair used by the deployed
       # HITTER policy. When both paths are valid, forehand/backhand offsets,
       # y_mid_base, and x_hit_world are derived from the npz impact frames.
-      forward_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/forward_001_wristfix_rotated.npz
-      backward_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/backward_001_rotated.npz
+      forward_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/pingpong/data/forward_001_wristfix_rotated.npz
+      backward_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/pingpong/data/backward_001_rotated.npz
       # Pose used for Velocity -> Pingpong interpolation. Defaults to
       # forward_motion_file if omitted. Frame 48 is a post-impact forehand
       # ready pose that tested cleaner than frame 0 from the Velocity stance.
-      entry_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/forward_001_wristfix_rotated.npz
+      entry_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/pingpong/data/forward_001_wristfix_rotated.npz
       # entry_motion_frame: 48
       entry_motion_frame: 64
       # full: all 23 policy joints follow the npz frame.
@@ -347,7 +352,7 @@ FSM:
       # forehand waiting command. Its geometry is built from the current pelvis
       # pose plus the forward npz frame-0 paddle offset; t_to_hit starts just
       # below zero and decreases until it is clamped at -post_swing_time.
-      fallback_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/forward_001_wristfix_rotated.npz
+      fallback_motion_file: ../../../deploy/robots/g1_23dof_pingpong/data/pingpong/data/forward_001_wristfix_rotated.npz
       fallback_motion_frame: 0
       waiting_initial_t_to_hit: -0.02
       forehand_y_safety_clamp: 0.40
@@ -373,6 +378,8 @@ FSM:
       # still 50 Hz via policy_dt.
       planner_min_t_to_hit: 0.0
       planner_max_t_to_hit: 1.20
+      gait_phase_min_t_hit0: 0.20
+      gait_phase_max_t_hit0: 0.90
       # Planner robustness guards for real tracking.  There are only three cmd
       # paths: initial forehand cmd on Pingpong entry, valid live planner cmd,
       # and bad-ball fallback.  Bad-ball fallback keeps the previous cmd geometry
@@ -385,7 +392,8 @@ FSM:
       # crossing the hit plane, C++ holds the last target but t_to_hit continues
       # decreasing through follow-through.
       freeze_time_before_hit: 0.0
-      post_swing_time: 0.50
+      # post_swing_time: 0.50
+      post_swing_time: 0.60
       # true: after impact, t_to_hit keeps decreasing until -post_swing_time,
       #       preserving the post-hit imitation/recovery timing.
       # false: once t_to_hit reaches 0, expose -post_swing_time immediately and

@@ -83,7 +83,7 @@ class AmpRolloutStorage(RolloutStorage):
     # ------------------------------------------------------------------
     # Write path
     # ------------------------------------------------------------------
-    def add_transition(self, transition: "AmpRolloutStorage.Transition") -> None:  # type: ignore[override]
+    def add_transitions(self, transition: "AmpRolloutStorage.Transition") -> None:  # type: ignore[override]
         """Record one transition including AMP extras."""
         if transition.amp_observations is None or transition.next_amp_observations is None:
             raise ValueError(
@@ -106,7 +106,11 @@ class AmpRolloutStorage(RolloutStorage):
             self.amp_rewards[step].copy_(transition.amp_rewards.view(-1, 1))
 
         # Delegate core RolloutStorage bookkeeping (also increments self.step).
-        super().add_transition(transition)
+        super().add_transitions(transition)
+
+    def add_transition(self, transition: "AmpRolloutStorage.Transition") -> None:
+        """Backward-compatible alias used by newer RSL-RL variants."""
+        self.add_transitions(transition)
 
     # ------------------------------------------------------------------
     # Sampling

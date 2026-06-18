@@ -695,6 +695,10 @@ void State_Pingpong::load_config(const YAML::Node &cfg)
     planner_bounce_cv_ = yaml_value<float>(planner, "planner_bounce_cv", planner_bounce_cv_);
     planner_min_t_to_hit_ = yaml_value<float>(planner, "planner_min_t_to_hit", planner_min_t_to_hit_);
     planner_max_t_to_hit_ = yaml_value<float>(planner, "planner_max_t_to_hit", planner_max_t_to_hit_);
+    gait_phase_min_t_hit0_ = yaml_value<float>(planner, "gait_phase_min_t_hit0", gait_phase_min_t_hit0_);
+    gait_phase_max_t_hit0_ = yaml_value<float>(planner, "gait_phase_max_t_hit0", gait_phase_max_t_hit0_);
+    if (gait_phase_max_t_hit0_ < gait_phase_min_t_hit0_)
+        std::swap(gait_phase_min_t_hit0_, gait_phase_max_t_hit0_);
     planner_min_incoming_speed_x_ = yaml_value<float>(planner, "min_incoming_speed_x", planner_min_incoming_speed_x_);
     planner_min_ball_z_world_ = yaml_value<float>(planner, "min_ball_z_world", table_top_z_ - ball_radius_);
     planner_max_table_bounces_before_fallback_ =
@@ -799,6 +803,9 @@ void State_Pingpong::load_config(const YAML::Node &cfg)
         "Pingpong command timing: post_hit_imitation={}, post_swing_time={:.2f}s",
         post_hit_imitation_, post_swing_time_);
     spdlog::info(
+        "Pingpong gait phase t_hit0 clamp: [{:.2f}, {:.2f}]s",
+        gait_phase_min_t_hit0_, gait_phase_max_t_hit0_);
+    spdlog::info(
         "Pingpong planner guards: min_incoming_speed_x={:.3f}, min_ball_z_world={:.3f}, max_table_bounces_before_fallback={}",
         planner_min_incoming_speed_x_, planner_min_ball_z_world_, planner_max_table_bounces_before_fallback_);
     spdlog::info(
@@ -874,7 +881,7 @@ void State_Pingpong::load_policy(const YAML::Node &cfg)
             if (term.name == "base_ang_vel" || term.name == "projected_gravity" || term.name == "hit_pos" ||
                 term.name == "racket_vel" || term.name == "active_face" || term.name == "target_normal")
                 term_dim = 3;
-            else if (term.name == "base_yaw" || term.name == "base_err")
+            else if (term.name == "base_yaw" || term.name == "base_err" || term.name == "gait_phase")
                 term_dim = 2;
             else if (term.name == "t_to_hit")
                 term_dim = 1;
@@ -1295,6 +1302,9 @@ void State_Pingpong::enter()
         command_active_ = false;
         command_frozen_ = false;
         has_live_planner_cmd_ = false;
+        gait_phase_latched_ = false;
+        gait_phase_start_time_s_ = 0.0;
+        gait_phase_t_hit0_ = 0.0f;
         last_command_update_s_ = 0.0;
         last_raw_action_.assign(io_.action_dim, 0.0f);
         obs_history_.clear();
@@ -1952,6 +1962,9 @@ void State_Pingpong::update_command(double now_s, const ExternalState &state)
             command_frozen_ = false;
             hit_window_logged_ = false;
             last_waiting_reason_.clear();
+            gait_phase_latched_ = true;
+            gait_phase_start_time_s_ = now_s;
+            gait_phase_t_hit0_ = clamp_scalar(corrected_t_to_hit, gait_phase_min_t_hit0_, gait_phase_max_t_hit0_);
         }
         command_active_ = true;
         // Keep timing tied to the newest valid ball observation.  The ROS
@@ -2020,6 +2033,8 @@ void State_Pingpong::update_command(double now_s, const ExternalState &state)
             std::lock_guard<std::mutex> lock(cmd_mtx_);
             command_active_ = false;
             command_frozen_ = false;
+            gait_phase_latched_ = false;
+            gait_phase_t_hit0_ = 0.0f;
             cmd_.t_to_hit = -post_swing_time_;
             cmd_.active = true;
             cmd_.planner_valid = true;
@@ -2080,9 +2095,13 @@ void State_Pingpong::hold_previous_or_seed_initial_command(double now_s, const E
             out_cmd.planner_valid = true;
             out_cmd.waiting_only = true;
             cmd_ = out_cmd;
+            gait_phase_latched_ = false;
+            gait_phase_t_hit0_ = 0.0f;
         }
         command_active_ = false;
         command_frozen_ = false;
+        gait_phase_latched_ = false;
+        gait_phase_t_hit0_ = 0.0f;
     }
 
     const std::string reason_str = reason ? reason : "unknown";
@@ -2333,6 +2352,18 @@ std::vector<float> State_Pingpong::build_obs_term(const std::string &name, const
         return {cmd.v_racket_hat_world.x(), cmd.v_racket_hat_world.y(), cmd.v_racket_hat_world.z()};
     if (name == "t_to_hit")
         return {cmd.t_to_hit};
+    if (name == "gait_phase")
+    {
+        if (!gait_phase_latched_ || gait_phase_t_hit0_ <= 1.0e-6f || !cmd.active || cmd.waiting_only || cmd.t_to_hit <= 0.0f)
+            return {0.0f, 0.0f};
+        const double now_s = controller_time_seconds() - start_time_s_;
+        const float phase = clamp_scalar(
+            static_cast<float>((now_s - gait_phase_start_time_s_) / static_cast<double>(gait_phase_t_hit0_)),
+            0.0f,
+            1.0f);
+        const float theta = 2.0f * static_cast<float>(M_PI) * phase;
+        return {std::sin(theta), std::cos(theta)};
+    }
     if (name == "active_face")
     {
         const float sign = 1.0f - 2.0f * static_cast<float>(cmd.swing_type);
@@ -3276,4 +3307,3 @@ void State_Pingpong::base_pose_cb(const geometry_msgs::msg::PoseStamped::SharedP
         }
     }
 }
-

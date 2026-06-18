@@ -636,7 +636,6 @@ from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.io import dump_yaml
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
-from isaaclab_rl.rsl_rl import handle_deprecated_rsl_rl_cfg
 
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
@@ -652,6 +651,7 @@ from checkpoint_compat import (
     task_names_match,
     wrap_runner_save_with_metadata,
 )
+from rsl_rl_compat import handle_deprecated_rsl_rl_cfg, load_runner_checkpoint
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -808,7 +808,7 @@ def main(
         same_task = task_names_match(checkpoint_summary.task_name, args_cli.task)
         if agent_cfg.resume and same_task:
             print("[INFO] Checkpoint load mode: full resume, optimizer=True, iteration=True")
-            runner.load(resume_path)
+            load_runner_checkpoint(runner, resume_path)
         else:
             warm_start_load_cfg = {
                 "actor": True,
@@ -828,7 +828,7 @@ def main(
                 f"[INFO] Checkpoint load mode: {reason} actor+critic, "
                 "optimizer=False, iteration=False"
             )
-            runner.load(resume_path, load_cfg=warm_start_load_cfg)
+            load_runner_checkpoint(runner, resume_path, load_cfg=warm_start_load_cfg)
 
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)

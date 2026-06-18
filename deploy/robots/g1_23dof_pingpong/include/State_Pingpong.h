@@ -244,6 +244,8 @@ private:
     float planner_bounce_cv_ = 0.90183574f;
     float planner_min_t_to_hit_ = 0.05f;
     float planner_max_t_to_hit_ = 1.20f;
+    float gait_phase_min_t_hit0_ = 0.20f;
+    float gait_phase_max_t_hit0_ = 0.90f;
     float planner_min_incoming_speed_x_ = 0.05f;
     float planner_min_ball_z_world_ = 0.74f;
     float freeze_time_before_hit_ = 0.20f;
@@ -285,6 +287,9 @@ private:
     bool command_active_ = false;
     bool command_frozen_ = false;
     bool has_live_planner_cmd_ = false;
+    bool gait_phase_latched_ = false;
+    double gait_phase_start_time_s_ = 0.0;
+    float gait_phase_t_hit0_ = 0.0f;
     double t_hit_abs_ = 0.0;
     double start_time_s_ = 0.0;
     double actor_blend_start_time_s_ = 0.0;
@@ -319,8 +324,8 @@ private:
     std::string motor_trace_path_ = "logs/motor_trace.csv";
     std::ofstream motor_trace_csv_;
     std::mutex motor_trace_mtx_;
-    // Per-tick observation trace: every 50 Hz tick records the FULL 92-D
-    // actor input vector (post scale / clip / history concatenation). Use
+    // Per-tick observation trace: every 50 Hz tick records the full actor
+    // input vector (post scale / clip / history concatenation). Use
     // for sim-vs-real obs diff to localize OOD dimensions when the actor
     // diverges on hardware. yaml: logging.obs_trace_csv.{enable, output}.
     bool obs_trace_enable_ = true;

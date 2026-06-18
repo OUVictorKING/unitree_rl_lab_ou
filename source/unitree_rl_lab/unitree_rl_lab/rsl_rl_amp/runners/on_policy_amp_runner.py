@@ -1,49 +1,27 @@
 # Copyright (c) 2025, Unitree Robotics
 # SPDX-License-Identifier: BSD-3-Clause
-"""On-policy runner for AMP training.
-
-Mirrors :class:`rsl_rl.runners.OnPolicyRunner` but constructs an
-:class:`AmpPPO` algorithm (which expects an ``"amp"`` observation group in the
-environment's obs TensorDict).
-
-The runner itself is thin: AMP-specific bookkeeping (style reward computation,
-discriminator update, normalization) lives in :class:`AmpPPO`. This keeps the
-runner very close to the stock rsl-rl OnPolicyRunner so upstream changes are
-easy to follow.
-
-Curriculum inputs
------------------
-Per iteration, the runner computes two scalars that the algorithm-side
-curriculum cannot observe directly and pushes them via
-:meth:`AmpPPO.set_curriculum_inputs`:
-
-- ``episode_length_norm`` — ``mean(env.episode_length_buf) / max_episode_length``
-- ``tracking_score`` — rollout-average of (``track_lin_vel_xy`` +
-  ``track_ang_vel_z``) raw step-rewards, normalized by the sum of their
-  maxes (both are ``exp(...)`` in [0, 1], so max sum = 2.0 × weight).
-"""
+"""On-policy runner for AMP training on the installed RSL-RL 3.x API."""
 
 from __future__ import annotations
 
 import os
+import statistics
 import time
 import torch
+from collections import deque
+from typing import Any
 
+import rsl_rl
 from rsl_rl.env import VecEnv
-from rsl_rl.models import MLPModel
-from rsl_rl.utils import check_nan, resolve_callable
-from rsl_rl.utils.logger import Logger
+from rsl_rl.modules import resolve_rnd_config, resolve_symmetry_config
+from rsl_rl.runners import OnPolicyRunner
+from rsl_rl.utils import store_code_state
 
 from ..algorithms.amp_ppo import AmpPPO
 
 
-class OnPolicyAmpRunner:
-    """On-policy runner wrapping :class:`AmpPPO`.
-
-    Mirrors the stock rsl-rl runner so all other pieces of the Unitree RL Lab
-    training pipeline (logger, git-tagging, checkpoint paths, export helpers)
-    continue to work.
-    """
+class OnPolicyAmpRunner(OnPolicyRunner):
+    """RSL-RL 3.x runner that constructs :class:`AmpPPO` and feeds its curriculum."""
 
     alg: AmpPPO
 
@@ -54,60 +32,200 @@ class OnPolicyAmpRunner:
         log_dir: str | None = None,
         device: str = "cpu",
     ) -> None:
-        self.env = env
-        self.cfg = train_cfg
-        self.device = device
+        super().__init__(env=env, train_cfg=train_cfg, log_dir=log_dir, device=device)
+        self._tracking_term_indices, self._tracking_max_sum = self._resolve_tracking_terms()
 
-        # Multi-GPU setup (identical to OnPolicyRunner).
-        self._configure_multi_gpu()
-
-        # Query observations so we can shape the rollout buffers.
-        obs = self.env.get_observations()
-
-        # Resolve the algorithm class. Default to AmpPPO if not specified.
-        alg_class_name = self.cfg["algorithm"].get("class_name", None)
-        if alg_class_name is None:
-            raise KeyError(
-                "train_cfg['algorithm']['class_name'] is required. "
-                "Point it at AmpPPO (or a subclass)."
-            )
-        alg_class: type[AmpPPO] = resolve_callable(alg_class_name)  # type: ignore[assignment]
-        # 初始化，创建网络，actor、critic、discriminator
-        self.alg = alg_class.construct_algorithm(obs, self.env, self.cfg, self.device)
-
-        # Logger.
-        self.logger = Logger(
-            log_dir=log_dir,
+    def _construct_algorithm(self, obs) -> AmpPPO:  # type: ignore[override]
+        self.alg_cfg = resolve_rnd_config(self.alg_cfg, obs, self.cfg["obs_groups"], self.env)
+        self.alg_cfg = resolve_symmetry_config(self.alg_cfg, self.env)
+        return AmpPPO.construct_algorithm(
+            obs=obs,
+            env=self.env,
             cfg=self.cfg,
-            env_cfg=self.env.cfg,
-            num_envs=self.env.num_envs,
-            is_distributed=self.is_distributed,
-            gpu_world_size=self.gpu_world_size,
-            gpu_global_rank=self.gpu_global_rank,
             device=self.device,
+            multi_gpu_cfg=self.multi_gpu_cfg,
         )
 
-        self.current_learning_iteration = 0
+    def learn(self, num_learning_iterations: int, init_at_random_ep_len: bool = False) -> None:  # type: ignore[override]
+        self._prepare_logging_writer()
 
-        # Resolve tracking-reward term indices once. These feed
-        # `tracking_score` into the AMP reward curriculum.
-        self._tracking_term_indices, self._tracking_max_sum = (
-            self._resolve_tracking_terms()
-        )
+        if init_at_random_ep_len:
+            self.env.episode_length_buf = torch.randint_like(
+                self.env.episode_length_buf, high=int(self.env.max_episode_length)
+            )
 
-    # ------------------------------------------------------------------
-    # Curriculum-input helpers
-    # ------------------------------------------------------------------
+        obs = self.env.get_observations().to(self.device)
+        self.train_mode()
+
+        ep_infos: list[dict] = []
+        rewbuffer = deque(maxlen=100)
+        lenbuffer = deque(maxlen=100)
+        cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+        cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+
+        if self.alg.rnd:
+            erewbuffer = deque(maxlen=100)
+            irewbuffer = deque(maxlen=100)
+            cur_ereward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+            cur_ireward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+
+        if self.is_distributed:
+            print(f"Synchronizing parameters for rank {self.gpu_global_rank}...")
+            self.alg.broadcast_parameters()
+
+        start_iter = self.current_learning_iteration
+        tot_iter = start_iter + num_learning_iterations
+        for it in range(start_iter, tot_iter):
+            start = time.time()
+            tracking_step_sum = 0.0
+            tracking_steps = 0
+
+            with torch.inference_mode():
+                for _ in range(self.num_steps_per_env):
+                    actions = self.alg.act(obs)
+                    obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
+                    obs, rewards, dones = (obs.to(self.device), rewards.to(self.device), dones.to(self.device))
+                    self.alg.process_env_step(obs, rewards, dones, extras)
+
+                    intrinsic_rewards = self.alg.intrinsic_rewards if self.alg.rnd else None
+                    tracking_step_sum += self._tracking_step_mean()
+                    tracking_steps += 1
+
+                    if self.log_dir is not None:
+                        if "episode" in extras:
+                            ep_infos.append(extras["episode"])
+                        elif "log" in extras:
+                            ep_infos.append(extras["log"])
+                        if self.alg.rnd:
+                            cur_ereward_sum += rewards
+                            cur_ireward_sum += intrinsic_rewards
+                            cur_reward_sum += rewards + intrinsic_rewards
+                        else:
+                            cur_reward_sum += rewards
+                        cur_episode_length += 1
+                        new_ids = (dones > 0).nonzero(as_tuple=False)
+                        rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                        lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
+                        cur_reward_sum[new_ids] = 0
+                        cur_episode_length[new_ids] = 0
+                        if self.alg.rnd:
+                            erewbuffer.extend(cur_ereward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                            irewbuffer.extend(cur_ireward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                            cur_ereward_sum[new_ids] = 0
+                            cur_ireward_sum[new_ids] = 0
+
+                stop = time.time()
+                collection_time = stop - start
+                start = stop
+                self.alg.compute_returns(obs)
+
+            tracking_score = 0.0
+            if self._tracking_term_indices:
+                tracking_score = (tracking_step_sum / max(tracking_steps, 1)) / max(self._tracking_max_sum, 1e-9)
+            self.alg.set_curriculum_inputs(
+                episode_length_norm=self._episode_length_norm(),
+                tracking_score=float(tracking_score),
+            )
+
+            loss_dict = self.alg.update()
+
+            stop = time.time()
+            learn_time = stop - start
+            self.current_learning_iteration = it
+
+            if self.log_dir is not None and not self.disable_logs:
+                self.log(locals())
+                if it % self.save_interval == 0:
+                    self.save(os.path.join(self.log_dir, f"model_{it}.pt"))
+
+            ep_infos.clear()
+            if it == start_iter and not self.disable_logs:
+                git_file_paths = store_code_state(self.log_dir, self.git_status_repos)
+                if self.logger_type in ["wandb", "neptune"] and git_file_paths:
+                    for path in git_file_paths:
+                        self.writer.save_file(path)
+
+        if self.log_dir is not None and not self.disable_logs:
+            self.save(os.path.join(self.log_dir, f"model_{self.current_learning_iteration}.pt"))
+
+    def save(self, path: str, infos: dict | None = None) -> None:  # type: ignore[override]
+        saved_dict = {
+            "model_state_dict": self.alg.policy.state_dict(),
+            "actor_state_dict": self.alg.actor.state_dict(),
+            "critic_state_dict": self.alg.critic.state_dict(),
+            "optimizer_state_dict": self.alg.optimizer.state_dict(),
+            "iter": self.current_learning_iteration,
+            "infos": infos,
+        }
+        if self.alg.rnd:
+            saved_dict["rnd_state_dict"] = self.alg.rnd.state_dict()
+            saved_dict["rnd_optimizer_state_dict"] = self.alg.rnd_optimizer.state_dict()
+        saved_dict.update(self.alg.extra_state_dict())
+        torch.save(saved_dict, path)
+
+        if self.logger_type in ["neptune", "wandb"] and not self.disable_logs:
+            self.writer.save_model(path, self.current_learning_iteration)
+
+    def load(
+        self,
+        path: str,
+        load_cfg: dict | None = None,
+        strict: bool = True,
+        map_location: str | None = None,
+        load_optimizer: bool | None = None,
+    ) -> dict:
+        loaded_dict = torch.load(path, weights_only=False, map_location=map_location)
+        lc = dict(load_cfg) if load_cfg is not None else {}
+        if load_optimizer is not None:
+            lc["optimizer"] = bool(load_optimizer)
+
+        load_actor = bool(lc.get("actor", True))
+        load_critic = bool(lc.get("critic", True))
+        load_opt = bool(lc.get("optimizer", True))
+        load_iter = bool(lc.get("iteration", True))
+        load_rnd = bool(lc.get("rnd", True))
+
+        if "model_state_dict" in loaded_dict and load_actor and load_critic:
+            resumed_training = self.alg.policy.load_state_dict(loaded_dict["model_state_dict"], strict=strict)
+        elif "model_state_dict" in loaded_dict:
+            _load_policy_subset(self.alg.policy, loaded_dict["model_state_dict"], load_actor, load_critic, strict)
+            resumed_training = True
+        else:
+            resumed_training = True
+            if load_actor and "actor_state_dict" in loaded_dict:
+                self.alg.actor.load_state_dict(loaded_dict["actor_state_dict"], strict=strict)
+            if load_critic and "critic_state_dict" in loaded_dict:
+                self.alg.critic.load_state_dict(loaded_dict["critic_state_dict"], strict=strict)
+
+        if load_rnd and self.alg.rnd and "rnd_state_dict" in loaded_dict:
+            self.alg.rnd.load_state_dict(loaded_dict["rnd_state_dict"], strict=strict)
+        if load_opt and resumed_training:
+            if "optimizer_state_dict" in loaded_dict:
+                self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
+            if load_rnd and self.alg.rnd and "rnd_optimizer_state_dict" in loaded_dict:
+                self.alg.rnd_optimizer.load_state_dict(loaded_dict["rnd_optimizer_state_dict"])
+        if load_iter and resumed_training and "iter" in loaded_dict:
+            self.current_learning_iteration = loaded_dict["iter"]
+
+        self.alg.load_amp_state(loaded_dict, load_cfg=lc, strict=strict)
+        return loaded_dict.get("infos")
+
+    def get_inference_policy(self, device: str | None = None) -> callable:  # type: ignore[override]
+        self.eval_mode()
+        if device is not None:
+            self.alg.policy.to(device)
+        return self.alg.policy.act_inference
+
+    def train_mode(self) -> None:  # type: ignore[override]
+        self.alg.train_mode()
+
+    def eval_mode(self) -> None:  # type: ignore[override]
+        self.alg.eval_mode()
+
     def _resolve_tracking_terms(
         self,
         names: tuple[str, ...] = ("track_lin_vel_xy", "track_ang_vel_z"),
     ) -> tuple[list[int], float]:
-        """Find the indices of tracking reward terms in the reward manager.
-
-        Returns a pair ``(indices, max_sum)`` where ``max_sum`` is the sum of
-        each term's weight. For exp-style tracking rewards in ``[0, 1]``, the
-        per-step max sum equals sum-of-weights.
-        """
         env_u = getattr(self.env, "unwrapped", self.env)
         rm = getattr(env_u, "reward_manager", None)
         if rm is None or not hasattr(rm, "active_terms"):
@@ -127,7 +245,6 @@ class OnPolicyAmpRunner:
         return indices, max_sum
 
     def _tracking_step_mean(self) -> float:
-        """Mean of (track_lin + track_ang) raw step reward over envs (this step)."""
         env_u = getattr(self.env, "unwrapped", self.env)
         rm = getattr(env_u, "reward_manager", None)
         if rm is None or not self._tracking_term_indices:
@@ -139,7 +256,6 @@ class OnPolicyAmpRunner:
         return float(tr.mean().item())
 
     def _episode_length_norm(self) -> float:
-        """Mean episode length in ``[0, 1]`` relative to ``max_episode_length``."""
         env_u = getattr(self.env, "unwrapped", self.env)
         length_buf = getattr(env_u, "episode_length_buf", None)
         max_len = float(getattr(env_u, "max_episode_length", 0.0) or 0.0)
@@ -147,194 +263,29 @@ class OnPolicyAmpRunner:
             return 0.0
         return float(length_buf.float().mean().item() / max_len)
 
-    # ------------------------------------------------------------------
-    # Learning loop
-    # ------------------------------------------------------------------
-    def learn(self, num_learning_iterations: int, init_at_random_ep_len: bool = False) -> None:
-        """Main learning loop, mirrors OnPolicyRunner.learn()."""
-        if init_at_random_ep_len:
-            self.env.episode_length_buf = torch.randint_like(
-                self.env.episode_length_buf, high=int(self.env.max_episode_length)
-            )
 
-        obs = self.env.get_observations().to(self.device)
-        self.alg.train_mode()
+def _load_policy_subset(policy, model_state_dict: dict, load_actor: bool, load_critic: bool, strict: bool) -> None:
+    current = policy.state_dict()
+    for key, value in model_state_dict.items():
+        if key not in current:
+            continue
+        if load_actor and _is_actor_policy_key(key):
+            current[key] = value
+        elif load_critic and _is_critic_policy_key(key):
+            current[key] = value
+    policy.load_state_dict(current, strict=strict)
 
-        if self.is_distributed:
-            print(f"Synchronizing parameters for rank {self.gpu_global_rank}...")
-            self.alg.broadcast_parameters()
 
-        self.logger.init_logging_writer()
+def _is_actor_policy_key(key: str) -> bool:
+    return (
+        key.startswith("actor.")
+        or key.startswith("actor_obs_normalizer.")
+        or key in {"std", "log_std"}
+    )
 
-        start_it = self.current_learning_iteration
-        total_it = start_it + num_learning_iterations
-        for it in range(start_it, total_it):
-            start = time.time()
-            tracking_step_sum = 0.0
-            tracking_steps = 0
-            # Rollout phase.
-            with torch.inference_mode():
-                for _ in range(self.cfg["num_steps_per_env"]):
-                    actions = self.alg.act(obs)
-                    obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
-                    if self.cfg.get("check_for_nan", True):
-                        check_nan(obs, rewards, dones)
-                    obs, rewards, dones = (
-                        obs.to(self.device),
-                        rewards.to(self.device),
-                        dones.to(self.device),
-                    )
-                    # 计算总reward，AMP的reward只计算，不更新，amp reward也会使用后面的那个课程的指标缓慢增大AMP的系数
-                    self.alg.process_env_step(obs, rewards, dones, extras)
-                    # AMP has no intrinsic reward channel comparable to RND; pass None.
-                    self.logger.process_env_step(rewards, dones, extras, None)
 
-                    # Accumulate tracking-reward step means for the curriculum.课程指标累加
-                    tracking_step_sum += self._tracking_step_mean()
-                    tracking_steps += 1
+def _is_critic_policy_key(key: str) -> bool:
+    return key.startswith("critic.") or key.startswith("critic_obs_normalizer.")
 
-                stop = time.time()
-                collect_time = stop - start
-                start = stop
 
-                # 这里计算整个episode计算return还有GAE，供给后面的网络更新使用
-                self.alg.compute_returns(obs)
-
-            # Push curriculum inputs before alg.update() ticks the curriculum.
-            track_max = max(self._tracking_max_sum, 1e-9)
-            tracking_score = (
-                (tracking_step_sum / max(tracking_steps, 1)) / track_max
-                if self._tracking_term_indices
-                else 0.0
-            )
-            # 单纯存储两个env的指标，提供给前面的 _step_curriculum 使用
-            self.alg.set_curriculum_inputs(
-                episode_length_norm=self._episode_length_norm(),
-                tracking_score=float(tracking_score),
-            )
-
-            # Update (PPO + discriminator).
-            loss_dict = self.alg.update()
-
-            stop = time.time()
-            learn_time = stop - start
-            self.current_learning_iteration = it
-
-            # Logging.
-            self.logger.log(
-                it=it,
-                start_it=start_it,
-                total_it=total_it,
-                collect_time=collect_time,
-                learn_time=learn_time,
-                loss_dict=loss_dict,
-                learning_rate=self.alg.learning_rate,
-                action_std=self.alg.get_policy().output_std,
-                rnd_weight=None,
-            )
-
-            if self.logger.writer is not None and it % self.cfg["save_interval"] == 0:
-                self.save(os.path.join(self.logger.log_dir, f"model_{it}.pt"))  # type: ignore[arg-type]
-
-        if self.logger.writer is not None:
-            self.save(os.path.join(self.logger.log_dir, f"model_{self.current_learning_iteration}.pt"))  # type: ignore[arg-type]
-            self.logger.stop_logging_writer()
-
-    # ------------------------------------------------------------------
-    # Save / load / export
-    # ------------------------------------------------------------------
-    def save(self, path: str, infos: dict | None = None) -> None:
-        """Persist algorithm state (PPO + AMP)."""
-        saved = self.alg.save()
-        saved["iter"] = self.current_learning_iteration
-        saved["infos"] = infos
-        torch.save(saved, path)
-        self.logger.save_model(path, self.current_learning_iteration)
-
-    def load(
-        self,
-        path: str,
-        load_cfg: dict | None = None,
-        strict: bool = True,
-        map_location: str | None = None,
-    ) -> dict:
-        """Load algorithm state (PPO + AMP)."""
-        loaded = torch.load(path, weights_only=False, map_location=map_location)
-        if self.alg.load(loaded, load_cfg, strict):
-            self.current_learning_iteration = loaded["iter"]
-        return loaded.get("infos")
-
-    def get_inference_policy(self, device: str | None = None) -> MLPModel:
-        self.alg.eval_mode()
-        return self.alg.get_policy().to(device)  # type: ignore[return-value]
-
-    def export_policy_to_jit(self, path: str, filename: str = "policy.pt") -> None:
-        """Export the policy to a TorchScript file (mirrors OnPolicyRunner)."""
-        jit_model = self.alg.get_policy().as_jit()
-        jit_model.to("cpu")
-        os.makedirs(path, exist_ok=True)
-        traced = torch.jit.script(jit_model)
-        traced.save(os.path.join(path, filename))
-
-    def export_policy_to_onnx(
-        self, path: str, filename: str = "policy.onnx", verbose: bool = False
-    ) -> None:
-        """Export the policy to ONNX (mirrors OnPolicyRunner)."""
-        onnx_model = self.alg.get_policy().as_onnx(verbose=verbose)
-        onnx_model.to("cpu")
-        onnx_model.eval()
-        os.makedirs(path, exist_ok=True)
-        torch.onnx.export(
-            onnx_model,
-            onnx_model.get_dummy_inputs(),  # type: ignore[arg-type]
-            os.path.join(path, filename),
-            export_params=True,
-            opset_version=18,
-            verbose=verbose,
-            input_names=onnx_model.input_names,  # type: ignore[attr-defined]
-            output_names=onnx_model.output_names,  # type: ignore[attr-defined]
-        )
-
-    def add_git_repo_to_log(self, repo_file_path: str) -> None:
-        self.logger.git_status_repos.append(repo_file_path)
-
-    # ------------------------------------------------------------------
-    # Multi-GPU
-    # ------------------------------------------------------------------
-    def _configure_multi_gpu(self) -> None:
-        self.gpu_world_size = int(os.getenv("WORLD_SIZE", "1"))
-        self.is_distributed = self.gpu_world_size > 1
-
-        if not self.is_distributed:
-            self.gpu_local_rank = 0
-            self.gpu_global_rank = 0
-            self.cfg["multi_gpu"] = None
-            return
-
-        self.gpu_local_rank = int(os.getenv("LOCAL_RANK", "0"))
-        self.gpu_global_rank = int(os.getenv("RANK", "0"))
-
-        self.cfg["multi_gpu"] = {
-            "global_rank": self.gpu_global_rank,
-            "local_rank": self.gpu_local_rank,
-            "world_size": self.gpu_world_size,
-        }
-
-        if self.device != f"cuda:{self.gpu_local_rank}":
-            raise ValueError(
-                f"Device '{self.device}' does not match expected device for local rank "
-                f"'{self.gpu_local_rank}'."
-            )
-        if self.gpu_local_rank >= self.gpu_world_size:
-            raise ValueError(
-                f"Local rank '{self.gpu_local_rank}' >= world size '{self.gpu_world_size}'."
-            )
-        if self.gpu_global_rank >= self.gpu_world_size:
-            raise ValueError(
-                f"Global rank '{self.gpu_global_rank}' >= world size '{self.gpu_world_size}'."
-            )
-
-        torch.distributed.init_process_group(
-            backend="nccl", rank=self.gpu_global_rank, world_size=self.gpu_world_size
-        )
-        torch.cuda.set_device(self.gpu_local_rank)
+__all__ = ["OnPolicyAmpRunner"]

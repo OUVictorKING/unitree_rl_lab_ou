@@ -296,6 +296,42 @@ def robot_table_contact_penalty(env: "ManagerBasedRLEnv", threshold: float, sens
     return torch.sum(force_norm > threshold, dim=-1).float()
 
 
+def pre_strike_feet_gait(
+    env: "ManagerBasedRLEnv",
+    command_name: str,
+    sensor_cfg: SceneEntityCfg,
+    offset: list[float] | tuple[float, float] = (0.0, 0.5),
+    threshold: float = 0.55,
+    move_threshold: float = 0.06,
+    settle_time: float = 0.15,
+) -> torch.Tensor:
+    """Reward a single gait cycle while the robot is approaching the strike.
+
+    The clock is one-shot: it advances from 0 to 1 over ``t_pre_initial`` for the
+    current planner command and becomes inactive when the command is no longer in
+    the pre-strike phase. Post-strike stability is still handled by the existing
+    no-strike foot regularizers.
+    """
+    cmd = _command(env, command_name)
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    is_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+
+    denom = torch.clamp(cmd.t_pre_initial, min=1.0e-6)
+    global_phase = torch.clamp((cmd.t_pre_initial - cmd.t_to_hit) / denom, 0.0, 1.0).unsqueeze(-1)
+    phases = [torch.remainder(global_phase + float(offset_), 1.0) for offset_ in offset]
+    leg_phase = torch.cat(phases, dim=-1)
+
+    reward = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
+    for i in range(len(sensor_cfg.body_ids)):
+        is_stance = leg_phase[:, i] < threshold
+        reward += ~(is_stance ^ is_contact[:, i])
+
+    base_err = cmd.p_base_xy_world - cmd.robot.data.root_pos_w[:, :2]
+    move_needed = torch.linalg.norm(base_err, dim=-1) > move_threshold
+    gate = (cmd.t_to_hit > settle_time) & move_needed
+    return reward * gate.float()
+
+
 # ---------------------------------------------------------------------------
 # Lower-body (leg) recovery regularizers (ported from locomotion).
 #

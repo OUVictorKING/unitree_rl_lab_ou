@@ -24,6 +24,8 @@ from isaaclab_rl.rsl_rl import RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
 
 from unitree_rl_lab.tasks.locomotion.agents.rsl_rl_ppo_cfg import BasePPORunnerCfg
 
+from ..velocity_amp_env_cfg import DEFAULT_PENGUIN_MOTION_FILES
+
 
 @configclass
 class AmpCurriculumCfg:
@@ -184,7 +186,5 @@ class AmpPPORunnerCfg(BasePPORunnerCfg):
     # 通过这个实例化展开amp的参数
     # ============================================================
     amp: AmpDatasetCfg = AmpDatasetCfg(
-        motion_files=[
-            "/home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/penguin/g1_qie_motion.npz",
-        ],
+        motion_files=list(DEFAULT_PENGUIN_MOTION_FILES),
     )

@@ -835,6 +835,16 @@ def update_pingpong_curriculum(
     v_unlock_cos_sim: float = 0.55,
     y_unlock_v_in_high: float = 3.5,
     y_unlock_hsr: float = 0.80,
+    # Locomotion-First curriculum (overrides the v→y staging above when
+    # ``locomotion_first`` is True). Stage 1 (y) unlocks early so the policy
+    # learns to MOVE to far balls before precise timing pressure arrives;
+    # Stage 2 (v) unlocks only after y has reached its widest cap; Stage 3
+    # (strike_window shrink) unlocks last. While stages 0–2 run, the strike
+    # window is FLOORED at ``strike_window_precision_floor`` (≥ control dt).
+    locomotion_first: bool = False,
+    strike_window_precision_floor: float = 0.04,
+    precision_unlock_v_in_high: float = 4.0,
+    precision_unlock_hsr: float = 0.75,
     cos_sim_collapse_threshold: float = 0.35,
     cos_sim_collapse_retreat_v_in_high: float = 2.5,
     cos_sim_collapse_retreat_hit_y_half_w: float = 0.10,
@@ -974,31 +984,61 @@ def update_pingpong_curriculum(
     cos_sim_ema = float(_COS_SIM_EMA["value"])
     cos_sim_ratchet_freeze = cos_sim_ema < cos_sim_freeze_threshold
 
-    # Sequenced curriculum gates (Stage 1 → 2 → 3): each layer unlocks only
-    # after the prior layer proves healthy. Run 2026-05-26_20-52-38 collapsed
-    # at iter ~14k because v_in_mag and hit_y advanced in parallel with the
-    # window curriculum: while shape_tier was still at 1.3, v_in had already
-    # been pushed to 2.71 and the policy hit a vel_fail=0.75 / hsr=0.17 reward-
-    # hacking corner (only追 base_pos, abandoned vel/ori/imit). Stage gates:
-    #   Stage 1 — only window curriculum runs. v_in & y locked at defaults.
-    #   Stage 2 — v_in unlocks once shape_tier ≥ v_unlock_shape_tier AND
+    # Sequenced curriculum gates.
+    #
+    # Default (``locomotion_first=False``): legacy ordering
+    #   Stage 1 — only window curriculum runs.
+    #   Stage 2 — v unlocks once shape_tier ≥ v_unlock_shape_tier AND
     #             hsr_ema ≥ v_unlock_hsr AND cos_sim_ema ≥ v_unlock_cos_sim.
     #   Stage 3 — y unlocks once Stage 2 has driven v_in_high to
     #             y_unlock_v_in_high AND hsr_ema ≥ y_unlock_hsr.
+    #
+    # Locomotion-First (``locomotion_first=True``): new ordering — moving to
+    # far balls is learned BEFORE timing precision is tightened.
+    #   Stage 1 — y unlocks once hsr_ema ≥ y_unlock_hsr (no v / shape_tier
+    #             precondition). Cap grows from initial → max as policy succeeds.
+    #   Stage 2 — v unlocks once hit_y_world_cap == cap_max (Stage 1 done) AND
+    #             hsr_ema ≥ v_unlock_hsr AND cos_sim_ema ≥ v_unlock_cos_sim.
+    #             Ball speed grows up to 4.0 m/s.
+    #   Stage 3 — strike_window shrink below ``strike_window_precision_floor``
+    #             unlocks once v_in_high ≥ precision_unlock_v_in_high AND
+    #             hsr_ema ≥ precision_unlock_hsr. Until then, the per-tier
+    #             shrink in the window curriculum is clamped at the floor.
     # Each gate is checked every iter (no latch); if a metric regresses, the
-    # tier curricula simply stop advancing — combined with the collapse-retreat
-    # below, this gives the policy room to recover.
-    v_curriculum_unlocked = (not sequenced_curriculum) or (
-        shape_tier >= int(v_unlock_shape_tier)
-        and hsr_ema >= float(v_unlock_hsr)
-        and cos_sim_ema >= float(v_unlock_cos_sim)
-    )
+    # tier curricula simply stop advancing.
     v_in_mag_high_now = float(command.cfg.v_in_mag_range[1])
-    y_curriculum_unlocked = (not sequenced_curriculum) or (
-        v_curriculum_unlocked
-        and v_in_mag_high_now >= float(y_unlock_v_in_high)
-        and hsr_ema >= float(y_unlock_hsr)
-    )
+
+    if bool(locomotion_first):
+        # y is gated only on hsr (no v, no shape_tier).
+        y_curriculum_unlocked = hsr_ema >= float(y_unlock_hsr)
+        # v is gated on Stage 1 completion (y cap maxed) + hsr + cos_sim.
+        cap_max = float(command.cfg.hit_y_world_cap_max)
+        cap_now = float(command.cfg.hit_y_world_cap)
+        y_stage_complete = cap_now >= cap_max - 1e-6
+        v_curriculum_unlocked = (
+            y_stage_complete
+            and hsr_ema >= float(v_unlock_hsr)
+            and cos_sim_ema >= float(v_unlock_cos_sim)
+        )
+        # Stage 3: strike_window allowed below the floor.
+        precision_unlocked = (
+            v_in_mag_high_now >= float(precision_unlock_v_in_high)
+            and hsr_ema >= float(precision_unlock_hsr)
+        )
+    else:
+        v_curriculum_unlocked = (not sequenced_curriculum) or (
+            shape_tier >= int(v_unlock_shape_tier)
+            and hsr_ema >= float(v_unlock_hsr)
+            and cos_sim_ema >= float(v_unlock_cos_sim)
+        )
+        y_curriculum_unlocked = (not sequenced_curriculum) or (
+            v_curriculum_unlocked
+            and v_in_mag_high_now >= float(y_unlock_v_in_high)
+            and hsr_ema >= float(y_unlock_hsr)
+        )
+        # Legacy mode: precision is always unlocked (no floor enforcement).
+        precision_unlocked = True
+
     effective_v_curriculum = bool(enable_v_curriculum) and bool(v_curriculum_unlocked)
     effective_y_curriculum = bool(enable_y_curriculum) and bool(y_curriculum_unlocked)
 
@@ -1034,12 +1074,19 @@ def update_pingpong_curriculum(
             # tier 1 (hsr ≥ 0.30): cap = lerp(0.20)
             # tier 2 (hsr ≥ 0.50): cap = lerp(0.45)
             # tier 3 (hsr ≥ 0.75): cap = lerp(0.75)
-            # tier 4 (hsr ≥ 0.90): cap = cap_max                   (widest)
+            # tier 4 (hsr ≥ 0.85): cap = cap_max                   (widest)
+            #   ↑ Lowered from 0.90 to 0.85 (run 2026-06-16_10-16-34 forensic):
+            #   with locomotion-first curriculum the policy stabilised at
+            #   hsr≈0.89 — caught in an oscillation where pushing y_cap to
+            #   cap_max dropped hsr just below 0.90, the cap retreated to
+            #   lerp(0.75), and the loop never escaped. v_curriculum (which
+            #   needs y_cap == cap_max) was permanently blocked. Lowering
+            #   the threshold lets the high-hsr policy commit to cap_max.
             def _tier_cap(t: float) -> float:
                 # t in [0, 1] interpolates between cap_initial and cap_max
                 return cap_initial + t * (cap_max - cap_initial)
 
-            if success_rate >= 0.90:
+            if success_rate >= 0.85:
                 command.cfg.hit_y_world_cap = cap_max
                 command.cfg.hit_z_range = (0.85, 1.25)
             elif success_rate >= 0.75:
@@ -1212,6 +1259,16 @@ def update_pingpong_curriculum(
                 )
                 break
 
+    # Locomotion-First: until Stage 3 (precision) unlocks, FLOOR strike_window
+    # at ``strike_window_precision_floor`` so timing pressure does not crush
+    # hsr while the policy is still learning to move to far balls. Once
+    # precision is unlocked, the per-tier monotone shrink above is allowed to
+    # take strike_window down to the tightest tier (0.01s in the default ladder).
+    if bool(locomotion_first) and not precision_unlocked:
+        floor = float(strike_window_precision_floor)
+        if command.cfg.strike_window < floor:
+            command.cfg.strike_window = floor
+
     return {
         "hit_success_rate": success_rate,
         "vel_success_rate": vel_success_rate,
@@ -1278,6 +1335,8 @@ def update_pingpong_curriculum(
         "cos_sim_ratchet_freeze": float(cos_sim_ratchet_freeze),
         "v_curriculum_unlocked": float(v_curriculum_unlocked),
         "y_curriculum_unlocked": float(y_curriculum_unlocked),
+        "precision_unlocked": float(precision_unlocked),
+        "locomotion_first_mode": float(bool(locomotion_first)),
         "cos_sim_collapsed": float(cos_sim_collapsed),
     }
 

@@ -80,9 +80,7 @@ from isaaclab.utils.assets import retrieve_file_path
 from isaaclab_rl.rsl_rl import (
     RslRlOnPolicyRunnerCfg,
     RslRlVecEnvWrapper,
-    handle_deprecated_rsl_rl_cfg,
 )
-from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 from isaaclab_tasks.utils import get_checkpoint_path
 
 import unitree_rl_lab.tasks  # noqa: F401
@@ -93,6 +91,7 @@ from checkpoint_compat import (
     load_checkpoint_summary,
     print_actor_checkpoint_compat_report,
 )
+from rsl_rl_compat import handle_deprecated_rsl_rl_cfg, load_runner_checkpoint
 
 
 # -----------------------------------------------------------------------------
@@ -105,6 +104,14 @@ def resolve_checkpoint(agent_cfg, args_cli) -> str:
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
 
     if getattr(args_cli, "use_pretrained_checkpoint", False):
+        try:
+            from isaaclab_rl.utils.pretrained_checkpoint import (
+                get_published_pretrained_checkpoint,
+            )
+        except ModuleNotFoundError:
+            from isaaclab_tasks.utils.pretrained_checkpoint import (
+                get_published_pretrained_checkpoint,
+            )
         resume_path = get_published_pretrained_checkpoint("rsl_rl", args_cli.task)
         if not resume_path:
             raise FileNotFoundError(
@@ -306,7 +313,7 @@ def main():
         "[INFO] Checkpoint load mode: export actor-only, "
         "critic=False, optimizer=False, iteration=False"
     )
-    runner.load(resume_path, load_cfg=export_load_cfg)
+    load_runner_checkpoint(runner, resume_path, load_cfg=export_load_cfg)
 
     # -------------------------------------------------------------------------
     # Get observations and infer actor input key
@@ -327,6 +334,11 @@ def main():
         env.unwrapped.device
     )
     export_module.eval()
+    # torch.jit.trace inlines weights as constants, which fails if any parameter
+    # still requires grad. The real nn parameters live on the runner's policy
+    # (policy_callable is a bound method, so export_module.parameters() is empty).
+    for p in runner.alg.policy.parameters():
+        p.requires_grad_(False)
 
     # sanity check
     with torch.inference_mode():
@@ -355,7 +367,8 @@ def main():
     # -------------------------------------------------------------------------
     # Export JIT
     # -------------------------------------------------------------------------
-    traced = torch.jit.trace(export_module, actor_obs)
+    with torch.no_grad():
+        traced = torch.jit.trace(export_module, actor_obs)
     traced.save(jit_path)
     print(f"[INFO] Saved JIT to: {jit_path}")
 
@@ -365,6 +378,8 @@ def main():
     policy_callable_cpu = runner.get_inference_policy(device="cpu")
     export_module_cpu = TensorInputPolicyWrapper(policy_callable_cpu, obs_key).cpu()
     export_module_cpu.eval()
+    for p in export_module_cpu.parameters():
+        p.requires_grad_(False)
 
     actor_obs_cpu = actor_obs.detach().cpu()
 

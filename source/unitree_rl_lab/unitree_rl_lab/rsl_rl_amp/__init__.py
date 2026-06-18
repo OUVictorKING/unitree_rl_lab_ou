@@ -19,7 +19,6 @@ Top-level exports:
 
 from __future__ import annotations
 
-from .algorithms.amp_ppo import AmpPPO, AMP_OBS_SET_NAME
 from .features import (
     AmpObsSpec,
     AmpObsState,
@@ -28,8 +27,6 @@ from .features import (
     concat_frame_history,
 )
 from .modules.amp_discriminator import AmpDiscriminator
-from .runners.on_policy_amp_runner import OnPolicyAmpRunner
-from .storage.amp_rollout_storage import AmpRolloutStorage
 from .storage.motion_dataset import MotionDataset, MotionResetPayload
 
 __all__ = [
@@ -46,3 +43,20 @@ __all__ = [
     "build_amp_window",
     "concat_frame_history",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy-load heavy AMP training classes so task registration stays lightweight."""
+    if name in {"AmpPPO", "AMP_OBS_SET_NAME"}:
+        from .algorithms.amp_ppo import AMP_OBS_SET_NAME, AmpPPO
+
+        return {"AmpPPO": AmpPPO, "AMP_OBS_SET_NAME": AMP_OBS_SET_NAME}[name]
+    if name == "OnPolicyAmpRunner":
+        from .runners.on_policy_amp_runner import OnPolicyAmpRunner
+
+        return OnPolicyAmpRunner
+    if name == "AmpRolloutStorage":
+        from .storage.amp_rollout_storage import AmpRolloutStorage
+
+        return AmpRolloutStorage
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

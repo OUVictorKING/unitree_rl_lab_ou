@@ -50,6 +50,7 @@ from .rsl_rl_amp_ppo_cfg import (
     AmpCurriculumCfg,
     AmpDatasetCfg,
     AmpPpoAlgorithmCfg,
+    DEFAULT_PENGUIN_MOTION_FILES,
 )
 from .rsl_rl_penguin_amp_ppo_cfg import PenguinAmpPPORunnerCfg
 
@@ -170,7 +171,5 @@ class PenguinAmpV2PPORunnerCfg(PenguinAmpPPORunnerCfg):
 
     algorithm: AmpPpoAlgorithmCfg = PenguinAmpV2AlgorithmCfg()
     amp: AmpDatasetCfg = PenguinAmpV2DatasetCfg(
-        motion_files=[
-            "/home/woan/HumanoidProject/unitree_rl_lab/motion_datasets/penguin/g1_qie_motion.npz",
-        ],
+        motion_files=list(DEFAULT_PENGUIN_MOTION_FILES),
     )
